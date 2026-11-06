@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report detail · US-07</title>
+<style>
+  :root {
+    --bg: #faf7f6;
+    --card: #ffffff;
+    --ink: #221917;
+    --muted: #7b6b66;
+    --line: #ece2df;
+    --accent: #b02d2b;
+    --accent-soft: #fbeceb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px 48px;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.55 -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  header { margin-bottom: 20px; }
+  .eyebrow {
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 6px 0 4px; font-size: 22px; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-bottom: 16px;
+  }
+  .summary { display: flex; gap: 24px; flex-wrap: wrap; }
+  .summary div { font-size: 13px; color: var(--muted); }
+  .summary strong { display: block; font-size: 20px; color: var(--ink); }
+  .summary .flag strong { color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th {
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    padding: 0 8px 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  td { padding: 10px 8px; border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: none; }
+  .name { font-weight: 600; }
+  .full { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
+  .num { font-variant-numeric: tabular-nums; }
+  .abnormal { background: var(--accent-soft); }
+  .abnormal .num { color: var(--accent); font-weight: 600; }
+  .tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    vertical-align: 2px;
+  }
+  .foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .note { color: var(--muted); font-size: 12px; }
+  a.file {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Report detail</div>
+    <h1 id="title">Blood routine</h1>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section class="card summary" id="summary"></section>
+
+  <section class="card">
+    <table>
+      <thead>
+        <tr><th>Item</th><th>Value</th><th>Unit</th><th>Reference</th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </section>
+
+  <section class="card foot">
+    <span class="note">Reference ranges follow the issuing laboratory. For information only — not a medical opinion.</span>
+    <a class="file" id="fileLink" href="#" target="_blank" rel="noopener">Open original file</a>
+  </section>
+</div>
+
+<script type="module">
+import { REPORT, isAbnormal, direction, referenceText, abnormalCount } from './report-detail.mjs';
+
+document.getElementById('title').textContent = REPORT.type;
+document.getElementById('meta').textContent = `${REPORT.hospital} · collected ${REPORT.collectedAt}`;
+document.getElementById('fileLink').href = REPORT.fileUrl;
+
+const flagged = abnormalCount(REPORT.items);
+
+document.getElementById('summary').innerHTML = `
+  <div><strong>${REPORT.items.length}</strong>items</div>
+  <div class="${flagged ? 'flag' : ''}"><strong>${flagged}</strong>out of range</div>
+  <div><strong>${REPORT.collectedAt}</strong>collected</div>
+`;
+
+document.getElementById('rows').innerHTML = REPORT.items.map(item => {
+  const dir = direction(item);
+  const flag = dir === 'normal' ? '' : `<span class="tag">${dir.toUpperCase()}</span>`;
+  return `<tr class="${isAbnormal(item) ? 'abnormal' : ''}">
+    <td><span class="name">${item.name}</span><span class="full">${item.display}</span></td>
+    <td class="num">${item.value}${flag}</td>
+    <td>${item.unit}</td>
+    <td class="num">${referenceText(item)}</td>
+  </tr>`;
+}).join('');
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "family-health-record",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A mobile app that keeps, organises and explains the medical reports of an elderly family member",
+  "scripts": {
+    "test": "node --test client/*.test.mjs"
+  }
+}
