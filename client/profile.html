@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>患者资料 · 家庭健康档案</title>
+<link rel="stylesheet" href="/client/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Patient profile</span>
+    <h1>患者资料</h1>
+    <div class="meta">报告都会归档在这位患者的名下</div>
+  </header>
+
+  <form class="card" id="form">
+    <div class="field">
+      <label class="label" for="name">姓名 <small>必填</small></label>
+      <input id="name" name="name" required maxlength="40" placeholder="如：王秀兰">
+    </div>
+    <div class="field">
+      <label class="label" for="birthYear">出生年份</label>
+      <input id="birthYear" name="birthYear" inputmode="numeric" maxlength="4" placeholder="如：1952">
+    </div>
+    <div class="field">
+      <label class="label" for="gender">性别</label>
+      <select id="gender" name="gender">
+        <option value="">不填写</option>
+        <option value="男">男</option>
+        <option value="女">女</option>
+      </select>
+    </div>
+    <div class="field">
+      <label class="label" for="notes">备注 <small>慢性病、长期用药等，仅家属可见</small></label>
+      <textarea id="notes" name="notes" maxlength="500" placeholder="如：高血压十年，服用氨氯地平"></textarea>
+    </div>
+    <button class="btn btn-primary" type="submit" id="saveBtn">保存资料</button>
+    <p class="note" style="margin-top:12px">数据保存在这台服务器上，不会发送给任何第三方。</p>
+  </form>
+
+  <a class="mini-link" href="/">← 返回时间线</a>
+</div>
+
+<script type="module">
+import { api, toast } from './api.mjs';
+
+const form = document.getElementById('form');
+const saveBtn = document.getElementById('saveBtn');
+
+try {
+  const state = await api('/api/state');
+  const patient = state.patients[0];
+  if (patient) {
+    form.name.value = patient.name || '';
+    form.birthYear.value = patient.birthYear || '';
+    form.gender.value = patient.gender || '';
+    form.notes.value = patient.notes || '';
+  }
+} catch (err) {
+  toast(err.message);
+}
+
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  saveBtn.disabled = true;
+  try {
+    const state = await api('/api/state');
+    await api('/api/patients', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: state.patients[0]?.id,
+        name: form.name.value,
+        birthYear: form.birthYear.value,
+        gender: form.gender.value,
+        notes: form.notes.value
+      })
+    });
+    location.href = '/';
+  } catch (err) {
+    toast(err.message);
+    saveBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

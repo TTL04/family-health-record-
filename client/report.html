@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>报告详情 · 家庭健康档案</title>
+<link rel="stylesheet" href="/client/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="topline">
+      <span class="eyebrow">Report detail</span>
+      <a class="mini-link" href="/">← 时间线</a>
+    </div>
+    <h1 id="title"></h1>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section class="card summary" id="summary"></section>
+
+  <section class="card">
+    <div class="note" style="margin-bottom:10px">点击任意一行查看通俗解读</div>
+    <table>
+      <thead>
+        <tr><th>项目</th><th>数值</th><th>单位</th><th>参考</th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="explainBox"></div>
+  </section>
+
+  <section class="card foot" id="photoCard" hidden>
+    <span class="note">原始报告照片仅作存档对照。</span>
+    <a class="mini-link" id="photoLink" href="#" target="_blank" rel="noopener">查看原始照片</a>
+  </section>
+
+  <section class="card">
+    <span class="note">Reference ranges follow the issuing laboratory. For information only — not a medical opinion.</span>
+    <div id="disclaimer" class="note" style="margin-top:6px"></div>
+  </section>
+
+  <button class="btn btn-danger" id="deleteBtn">删除这份报告</button>
+</div>
+
+<script type="module">
+import { api, esc, toast } from './api.mjs';
+import { isAbnormal, direction, referenceText, abnormalCount, DISCLAIMER } from '/logic.mjs';
+
+const reportId = new URLSearchParams(location.search).get('id');
+const explainBox = document.getElementById('explainBox');
+let currentRow = null;
+
+if (!reportId) { location.href = '/'; }
+
+let report;
+try {
+  report = await api(`/api/reports/${encodeURIComponent(reportId)}`);
+} catch (err) {
+  toast(err.message);
+  setTimeout(() => { location.href = '/'; }, 1200);
+  throw err;
+}
+
+document.getElementById('title').textContent = report.type;
+document.getElementById('meta').textContent =
+  `${report.hospital || '未记录医院'} · 采样 ${report.collectedAt}`;
+document.getElementById('disclaimer').textContent = DISCLAIMER;
+
+const flagged = abnormalCount(report.items);
+document.getElementById('summary').innerHTML = `
+  <div><strong>${report.items.length}</strong>项指标</div>
+  <div class="${flagged ? 'flag' : ''}" style="${flagged ? 'color:var(--accent)' : ''}">
+    <strong>${flagged}</strong>项异常</div>
+  <div><strong>${esc(report.collectedAt)}</strong>采样日期</div>`;
+
+document.getElementById('rows').innerHTML = report.items.map(item => {
+  const dir = direction(item);
+  const tag = dir === 'normal' ? '' : `<span class="tag">${dir === 'high' ? 'H' : 'L'}</span>`;
+  return `<tr class="${isAbnormal(item) ? 'abnormal' : ''}" data-item="${esc(item.id)}" style="cursor:pointer">
+    <td><span class="name">${esc(item.name)}</span><span class="full">${esc(item.display)}</span></td>
+    <td class="num">${esc(item.value)}${tag}</td>
+    <td>${esc(item.unit)}</td>
+    <td class="num">${esc(referenceText(item))}</td>
+  </tr>`;
+}).join('');
+
+if (report.photo) {
+  const card = document.getElementById('photoCard');
+  card.hidden = false;
+  document.getElementById('photoLink').href = report.photo;
+}
+
+// US-10: plain-language explanation with the change since the last report.
+document.getElementById('rows').addEventListener('click', async event => {
+  const tr = event.target.closest('tr[data-item]');
+  if (!tr) return;
+  if (currentRow === tr.dataset.item) { explainBox.innerHTML = ''; currentRow = null; return; }
+  currentRow = tr.dataset.item;
+  explainBox.innerHTML = `<div class="explain-panel">正在生成解读…</div>`;
+  try {
+    const result = await api('/api/explain', {
+      method: 'POST',
+      body: JSON.stringify({ reportId: report.id, itemId: tr.dataset.item })
+    });
+    if (currentRow !== tr.dataset.item) return;
+    explainBox.innerHTML = `
+      <div class="explain-panel">
+        ${esc(result.text)}
+        <span class="disclaimer">${esc(DISCLAIMER)}</span>
+      </div>`;
+  } catch (err) {
+    explainBox.innerHTML = '';
+    currentRow = null;
+    toast(err.message);
+  }
+});
+
+// US-11: delete a wrong upload so the timeline stays clean.
+document.getElementById('deleteBtn').addEventListener('click', async () => {
+  if (!confirm('确定删除这份报告吗？删除后无法恢复。')) return;
+  try {
+    await api(`/api/reports/${encodeURIComponent(report.id)}`, { method: 'DELETE' });
+    location.href = '/';
+  } catch (err) {
+    toast(err.message);
+  }
+});
+</script>
+</body>
+</html>

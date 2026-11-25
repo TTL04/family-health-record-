@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>新建报告 · 家庭健康档案</title>
+<link rel="stylesheet" href="/client/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="eyebrow">New report</span>
+    <h1>新建报告</h1>
+    <div class="meta">拍一张报告照片让 AI 预填，或者直接手动录入</div>
+  </header>
+
+  <form id="form">
+    <section class="card">
+      <div class="field">
+        <label class="label" for="photoInput">报告照片 / PDF</label>
+        <input id="photoInput" type="file" accept="image/*,.pdf">
+        <div id="photoHint" class="note" style="margin-top:8px"></div>
+        <div id="photoPreview" style="margin-top:10px"></div>
+      </div>
+      <button type="button" class="btn btn-ghost" id="extractBtn" hidden>AI 识别并预填</button>
+      <div class="note" id="extractHint" style="margin-top:8px"></div>
+    </section>
+
+    <section class="card">
+      <div class="field">
+        <label class="label" for="type">报告类型 <small>如：血常规、肝功能</small></label>
+        <input id="type" placeholder="检验报告">
+      </div>
+      <div class="field">
+        <label class="label" for="hospital">医院 / 机构</label>
+        <input id="hospital" placeholder="如：市人民医院">
+      </div>
+      <div class="field">
+        <label class="label" for="collectedAt">采样日期 <small>必填</small></label>
+        <input id="collectedAt" type="date" required>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="topline" style="margin-bottom:6px">
+        <label class="label" style="margin:0">检验项目 <small>参考范围照抄报告上印的</small></label>
+      </div>
+      <div id="items"></div>
+      <button type="button" class="btn-small" id="addItemBtn" style="margin-top:12px">＋ 添加一项</button>
+    </section>
+
+    <button class="btn btn-primary" type="submit" id="saveBtn">保存报告</button>
+    <p class="note" style="margin-top:12px">保存后可随时在详情页逐项查看解读。</p>
+  </form>
+
+  <a class="mini-link" href="/">← 返回时间线</a>
+</div>
+
+<script type="module">
+import { api, esc, toast } from './api.mjs';
+
+const state = await api('/api/state').catch(err => { toast(err.message); throw err; });
+if (!state.patients.length) {
+  toast('请先创建患者资料');
+  location.href = '/profile.html';
+}
+
+let photoDataUrl = null;
+let photoUrl = null;
+let items = [];
+let extractionTried = false;
+
+const $ = id => document.getElementById(id);
+const photoInput = $('photoInput');
+const extractBtn = $('extractBtn');
+const extractHint = $('extractHint');
+const itemsBox = $('items');
+
+if (state.extractionEnabled) {
+  extractBtn.hidden = false;
+  extractHint.textContent = '';
+} else {
+  extractHint.textContent = '服务器未配置 AI 识别，直接手动录入即可。';
+}
+
+$('collectedAt').value = new Date().toISOString().slice(0, 10);
+
+function blankItem() {
+  return { name: '', display: '', value: '', unit: '', refText: '', corrected: true };
+}
+
+function renderItems() {
+  itemsBox.innerHTML = items.map((item, idx) => `
+    <div class="item-row" data-idx="${idx}">
+      <button type="button" class="item-remove" data-remove="${idx}">删除</button>
+      <input data-field="name" placeholder="项目名称 * 如：白细胞" value="${esc(item.name)}">
+      <input data-field="value" placeholder="数值 * 如：6.2" inputmode="decimal" value="${esc(item.value)}">
+      <input data-field="unit" placeholder="单位 如：10^9/L" value="${esc(item.unit)}">
+      <input data-field="refText" placeholder="参考范围 如：3.5-9.5" value="${esc(item.refText)}">
+      <input class="span2" data-field="display" placeholder="英文缩写（选填）如：WBC" value="${esc(item.display)}">
+    </div>`).join('');
+}
+
+items = [blankItem()];
+renderItems();
+
+itemsBox.addEventListener('input', event => {
+  const row = event.target.closest('.item-row');
+  if (!row) return;
+  const idx = Number(row.dataset.idx);
+  items[idx][event.target.dataset.field] = event.target.value;
+  // US-04: any human edit marks the item as user-corrected.
+  items[idx].corrected = true;
+});
+
+itemsBox.addEventListener('click', event => {
+  const btn = event.target.closest('[data-remove]');
+  if (!btn) return;
+  items.splice(Number(btn.dataset.remove), 1);
+  if (!items.length) items.push(blankItem());
+  renderItems();
+});
+
+$('addItemBtn').addEventListener('click', () => {
+  items.push(blankItem());
+  renderItems();
+});
+
+photoInput.addEventListener('change', async () => {
+  const file = photoInput.files[0];
+  $('photoPreview').innerHTML = '';
+  $('photoHint').textContent = '';
+  photoDataUrl = null;
+  photoUrl = null;
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) {
+    toast('文件超过 10 MB 限制，请压缩后再上传');
+    photoInput.value = '';
+    return;
+  }
+  try {
+    photoDataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('读取文件失败'));
+      reader.readAsDataURL(file);
+    });
+    if (file.type.startsWith('image/')) {
+      $('photoPreview').innerHTML = `<img class="photo-preview" src="${photoDataUrl}" alt="报告照片预览">`;
+    } else {
+      $('photoPreview').innerHTML = `<div class="note">已选择 PDF：${esc(file.name)}</div>`;
+    }
+    $('photoHint').textContent = '已选择文件，保存报告时会一起存档。';
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+// US-03 / US-05: pre-fill from the photo; unreadable photos prompt a retake.
+extractBtn.addEventListener('click', async () => {
+  if (!photoDataUrl) { toast('请先选择报告照片'); return; }
+  if (photoInput.files[0] && photoInput.files[0].type === 'application/pdf') {
+    toast('自动识别目前只支持图片，PDF 请手动录入');
+    return;
+  }
+  extractBtn.disabled = true;
+  extractBtn.textContent = '识别中…';
+  try {
+    const result = await api('/api/extract', {
+      method: 'POST',
+      body: JSON.stringify({ photo: photoDataUrl })
+    });
+    if (!result.ok) { toast(result.reason || '识别失败'); return; }
+    if (result.quality === 'unreadable') {
+      toast('照片不够清晰，无法可靠读数，请重拍一张');
+      return;
+    }
+    $('type').value = result.fields.reportType || $('type').value;
+    $('hospital').value = result.fields.hospital || $('hospital').value;
+    $('collectedAt').value = result.fields.collectedAt || $('collectedAt').value;
+    if (result.items.length) {
+      items = result.items.map(item => ({
+        name: item.name,
+        display: item.display || '',
+        value: String(item.value),
+        unit: item.unit || '',
+        refText: item.refText || '',
+        corrected: false
+      }));
+      renderItems();
+      toast(`识别到 ${items.length} 项，请核对数值后保存`);
+      extractionTried = true;
+    } else {
+      toast('没有识别到检验项目，请手动录入');
+    }
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    extractBtn.disabled = false;
+    extractBtn.textContent = 'AI 识别并预填';
+  }
+});
+
+$('form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!$('collectedAt').value) { toast('请填写采样日期'); return; }
+  const usable = items.filter(i => i.name.trim() && i.value !== '');
+  if (!usable.length) { toast('至少填写一条项目名称和数值'); return; }
+  for (const item of usable) {
+    if (!Number.isFinite(Number(item.value))) {
+      toast(`「${item.name}」的数值不是有效数字`);
+      return;
+    }
+  }
+  $('saveBtn').disabled = true;
+  try {
+    const report = await api('/api/reports', {
+      method: 'POST',
+      body: JSON.stringify({
+        patientId: state.patients[0].id,
+        type: $('type').value,
+        hospital: $('hospital').value,
+        collectedAt: $('collectedAt').value,
+        photo: photoUrl,
+        items: usable
+      })
+    });
+    location.href = `/report.html?id=${encodeURIComponent(report.id)}`;
+  } catch (err) {
+    toast(err.message);
+    $('saveBtn').disabled = false;
+  }
+});
+</script>
+</body>
+</html>
