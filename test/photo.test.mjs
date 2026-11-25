@@ -8,6 +8,15 @@ test('US-02 a normal JPG is accepted with its extension', () => {
   assert.deepEqual(verdict, { ok: true, ext: 'jpg' });
 });
 
+test('US-02 the size limit is the 2 MB stated in the acceptance criterion', () => {
+  assert.equal(PHOTO_RULES.maxBytes, 2 * 1024 * 1024);
+});
+
+test('US-02 a file one byte over the limit is rejected', () => {
+  const verdict = validatePhoto({ mime: 'image/jpeg', bytes: 2 * 1024 * 1024 + 1 });
+  assert.equal(verdict.ok, false);
+});
+
 test('US-02 an oversized file is rejected with a reason', () => {
   const verdict = validatePhoto({ mime: 'image/jpeg', bytes: PHOTO_RULES.maxBytes + 1 });
   assert.equal(verdict.ok, false);
