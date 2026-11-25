@@ -1,0 +1,22 @@
+name: tests
+
+# Pull requests only, plus manual runs.
+# The initial skeleton on `main` had no tests, so a push trigger would have
+# reported red on every commit for a reason that no code change could fix.
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  acceptance-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # No dependencies are declared, so there is nothing to install.
+      - name: Run the acceptance tests
+        run: npm test
