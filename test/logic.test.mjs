@@ -38,9 +38,19 @@ test('US-07 a value inside the range is not abnormal', () => {
 });
 
 test('US-07 a value exactly on a limit counts as normal', () => {
-  const edge = { value: 9.5, refLow: 3.5, refHigh: 9.5 };
-  assert.equal(isAbnormal(edge), false);
-  assert.equal(direction(edge), 'normal');
+  const onUpper = { value: 9.5, refLow: 3.5, refHigh: 9.5 };
+  assert.equal(isAbnormal(onUpper), false);
+  assert.equal(direction(onUpper), 'normal');
+
+  // The lower edge behaves the same way, so both limits are inclusive.
+  const onLower = { value: 3.5, refLow: 3.5, refHigh: 9.5 };
+  assert.equal(isAbnormal(onLower), false);
+  assert.equal(direction(onLower), 'normal');
+
+  // One step outside is already abnormal, so the limit itself is the only
+  // value that counts as normal. This is what pins the strict comparison.
+  assert.equal(isAbnormal({ value: 9.51, refLow: 3.5, refHigh: 9.5 }), true);
+  assert.equal(isAbnormal({ value: 3.49, refLow: 3.5, refHigh: 9.5 }), true);
 });
 
 test('US-07 reference range is rendered as low - high', () => {
