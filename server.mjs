@@ -12,6 +12,7 @@ import { llmConfig, extractReport, explainValue } from './lib/llm.mjs';
 import {
   abnormalCount, sortReports, explainText, lookupBuiltin, parseRefText, DISCLAIMER
 } from './lib/logic.mjs';
+import { normaliseEntry } from './lib/units.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT = path.join(ROOT, 'client');
@@ -142,24 +143,46 @@ function normalizeItem(raw, index) {
     refLow = refLow ?? parsed.low;
     refHigh = refHigh ?? parsed.high;
   }
-  if (refLow == null && refHigh == null) {
-    const builtin = lookupBuiltin(name) || (display ? lookupBuiltin(display) : null);
-    if (builtin) {
-      refLow = builtin.low;
-      refHigh = builtin.high;
-      unit = unit || builtin.unit;
-    }
+
+  const builtin = lookupBuiltin(name) || (display ? lookupBuiltin(display) : null);
+  let boundsFromBuiltin = false;
+  if (refLow == null && refHigh == null && builtin) {
+    refLow = builtin.low;
+    refHigh = builtin.high;
+    boundsFromBuiltin = true;
+  }
+  if (!unit && builtin) unit = builtin.unit;
+
+  // T-01: convert once, here, and nowhere else. Everything stored below is
+  // already in the canonical unit, which is what lets isAbnormal keep
+  // comparing bare numbers without looking at the unit at all.
+  //
+  // The bounds travel with the value: a report printing "11.0 - 16.0 g/dL"
+  // means that range in g/dL too, so converting only the reading would
+  // compare 118 against 16 and call every result high.
+  const normalised = normaliseEntry({
+    indicator: builtin?.display || display || name,
+    value,
+    unit,
+    refLow,
+    refHigh,
+    boundsAreCanonical: boundsFromBuiltin
+  });
+  if (!normalised.ok) {
+    const accepted = normalised.accepted?.length ? normalised.accepted.join('、') : '无';
+    badRequest(`「${name}」的单位${unit ? `「${unit}」` : ''}无法换算：${normalised.reason}。可接受单位：${accepted}`);
   }
 
   return {
     id: `i_${crypto.randomUUID().slice(0, 8)}`,
     name,
     display,
-    value,
-    unit,
+    value: normalised.value,
+    unit: normalised.unit,
+    unitOriginal: normalised.unitOriginal || unit,
     refText,
-    refLow,
-    refHigh,
+    refLow: normalised.refLow,
+    refHigh: normalised.refHigh,
     corrected: Boolean(raw?.corrected)
   };
 }
