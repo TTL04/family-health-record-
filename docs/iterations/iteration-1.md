@@ -17,9 +17,9 @@
 | US-06 | 12 reports listed newest first, loading in under 2 s | **Merged 11-25** | PR #17 · `client/index.html` |
 | US-08 | The same records appear in the same order after a restart | **Merged 11-25** | PR #17 · `lib/store.mjs` · `test/store.test.mjs` |
 
-Not started: US-09 to US-13 (Should/Could). Test suite at the end of the iteration: **24 passing**.
+Not started: US-09 to US-13 (Should/Could). Test suite at the end of the iteration: **24 passing**, raised to **26** by the two tests added when review found the photo limit was wrong.
 
-> PR numbers and hashes for the 11-25 batch must be filled in after that pull request is opened. Everything before 11-25 is already in the public history.
+> The 11-25 batch is PR #17, merged as `a2af016`. Review of that pull request found the photo limit set to 10 MB while US-02 asks for 2 MB; `0f05623` fixes it and `0daefb7` pins both range boundaries. That finding is the only defect the process caught before release, and it arrived in the last hour of the iteration.
 
 ## How the work was done
 
