@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>家庭健康档案</title>
+<link rel="stylesheet" href="/client/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="topline">
+      <span class="eyebrow">Family Health Record</span>
+      <a class="mini-link" href="/profile.html">患者资料</a>
+    </div>
+    <h1 id="patientName">家庭健康档案</h1>
+    <div class="meta" id="patientMeta"></div>
+  </header>
+
+  <section id="list"></section>
+
+  <p class="note">时间线按采样日期从新到旧排列 · 点击任意一条查看全部指标和解读</p>
+  <p class="note" id="disclaimer"></p>
+</div>
+
+<a class="fab" href="/new.html" title="新建报告" aria-label="新建报告">＋</a>
+
+<script type="module">
+import { api, esc, toast } from './api.mjs';
+
+try {
+  const state = await api('/api/state');
+  const patient = state.patients[0];
+
+  if (patient) {
+    document.getElementById('patientName').textContent = `${patient.name} 的健康档案`;
+    const bits = [patient.birthYear && `${patient.birthYear} 年生`, patient.gender]
+      .filter(Boolean).join(' · ');
+    document.getElementById('patientMeta').textContent = bits || '点击右上角补充患者资料';
+  } else {
+    document.getElementById('patientName').textContent = '先创建患者资料';
+    document.getElementById('patientMeta').textContent = '添加姓名后即可开始记录报告';
+  }
+
+  document.getElementById('disclaimer').textContent = state.disclaimer;
+
+  const list = document.getElementById('list');
+  if (!state.reports.length) {
+    list.innerHTML = `
+      <div class="card empty">
+        <strong>还没有报告</strong>
+        拍一张检验报告的照片，或者手动录入，第一份报告会出现在这里。
+      </div>`;
+  } else {
+    list.innerHTML = state.reports.map(r => `
+      <a class="card row" href="/report.html?id=${esc(r.id)}">
+        <div class="row-date">${esc(r.collectedAt)}</div>
+        <div class="row-main">
+          <strong>${esc(r.type)}</strong>
+          <span>${esc(r.hospital || '未记录医院')} · ${r.itemCount} 项指标</span>
+        </div>
+        ${r.abnormalCount > 0
+          ? `<span class="badge warn">${r.abnormalCount} 项异常</span>`
+          : `<span class="badge ok">正常</span>`}
+      </a>`).join('');
+  }
+} catch (err) {
+  toast(err.message);
+}
+</script>
+</body>
+</html>
