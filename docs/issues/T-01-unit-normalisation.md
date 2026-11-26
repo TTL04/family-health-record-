@@ -50,10 +50,17 @@ Consequence: a haemoglobin result of `11.8 g/dL` is compared against a `115–17
 npm test
 ```
 
-Expected: the four `T-01` tests pass, together with the existing 24. To see the failure first, check out the commit that adds `test/units.test.mjs` before the implementation lands.
+Expected: the seven `T-01` tests pass, together with the existing 26. To see the failure first, check out the commit that adds `test/units.test.mjs` before the implementation lands — all seven fail with `ERR_MODULE_NOT_FOUND` until `lib/units.mjs` exists.
 
 ## Traceability
 
 | Requirement | Issue | Change | Test |
 |---|---|---|---|
-| US-09 ("in a single unit") | this issue | `lib/units.mjs`, wired into `normalizeItem` | `test/units.test.mjs` — 4 tests |
+| US-09 ("in a single unit") | this issue | `lib/units.mjs`, wired into `normalizeItem` | `test/units.test.mjs` — 7 tests |
+
+Three of the seven tests guard behaviour the criteria do not spell out, because each one is a way the obvious implementation goes wrong:
+
+- converting an already-canonical value a second time (118 g/L becoming 1180 g/L);
+- one global factor for every indicator, which is wrong for whichever substance it was not derived from;
+- converting the reading but not the reference range printed beside it, which compares 118 g/L against a bound of 16 g/dL and calls every result high.
+
