@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN" data-title="管理后台">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>管理后台 · 家庭健康档案</title>
+<link rel="stylesheet" href="/client/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="topline">
+      <a class="back-btn" href="/" data-i18n="← 返回首页">← 返回首页</a>
+    </div>
+    <h1 data-i18n="管理后台">管理后台</h1>
+    <div class="meta" data-i18n="你管理的档案与绑定成员">你管理的档案与绑定成员</div>
+  </header>
+
+  <section class="card" id="filterCard" hidden>
+    <div class="filter-bar">
+      <input id="searchInput" type="text" data-i18n-ph="搜索患者名称" placeholder="搜索患者名称">
+      <select id="patientSelect"><option value="" data-i18n="全部患者">全部患者</option></select>
+    </div>
+  </section>
+
+  <section id="archiveList"></section>
+
+  <p class="note" data-i18n="绑定成员默认只读，开通上传后可新增报告（仍不能删除）。">绑定成员默认只读，开通上传后可新增报告（仍不能删除）。</p>
+</div>
+
+<script type="module">
+import { api, esc, toast } from './api.mjs';
+import { initI18n, t } from './i18n.mjs';
+
+initI18n();
+
+const $ = id => document.getElementById(id);
+
+let archives = [];
+const searchInput = $('searchInput');
+const patientSelect = $('patientSelect');
+
+function renderRows() {
+  const keyword = searchInput.value.trim().toLowerCase();
+  const picked = patientSelect.value;
+  const rows = archives.filter(a => {
+    if (picked && a.id !== picked) return false;
+    if (keyword && !String(a.name).toLowerCase().includes(keyword)) return false;
+    return true;
+  });
+
+  $('archiveList').innerHTML = rows.map(a => `
+    <div class="card">
+      <div class="topline" style="margin-bottom:8px">
+        <label class="label" style="margin:0">${esc(a.name)}
+          <small>${a.isOwner === false ? t('管理者 {name}', { name: esc(a.owner) }) : t('我创建的')}</small>
+        </label>
+        <span class="badge plain">${t('{n} 位绑定成员', { n: a.members.length })}</span>
+      </div>
+      ${a.members.length ? a.members.map(m => `
+        <div class="row member-row">
+          <div class="row-main">
+            <strong>${esc(m.username)}</strong>
+            <span>${m.canUpload ? t('可上传报告（仍不能删除）') : t('仅查看，只读')}</span>
+          </div>
+          <button type="button" class="btn-small upload-toggle ${m.canUpload ? 'on' : 'off'}"
+                  data-patient="${esc(a.id)}" data-user="${esc(m.userId)}" data-allowed="${m.canUpload ? '1' : '0'}">
+            ${m.canUpload ? t('取消上传') : t('开通上传')}
+          </button>
+        </div>`).join('') : `<div class="note">${t('还没有人绑定这份档案。把「患者资料」页的绑定码发给家人即可。')}</div>`}
+    </div>`).join('')
+    || `<div class="card empty"><strong>${t('没有匹配的档案')}</strong>${t('换个关键词，或选择「全部患者」。')}</div>`;
+}
+
+try {
+  archives = await api('/api/admin/members');
+
+  if (!archives.length) {
+    $('archiveList').innerHTML = `
+      <div class="card empty">
+        <strong>${t('你还没有自己创建的档案')}</strong>
+        ${t('只有档案的管理者（创建者）能在这里管理绑定成员。绑定别人的档案后，你只能查看。')}
+      </div>`;
+  } else {
+    // 患者下拉：直接选人，比输入更快。
+    patientSelect.innerHTML = `<option value="">${t('全部患者')}</option>` +
+      archives.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
+    $('filterCard').hidden = false;
+    renderRows();
+
+    searchInput.addEventListener('input', renderRows);
+    patientSelect.addEventListener('change', renderRows);
+  }
+
+  $('archiveList').addEventListener('click', async event => {
+    const btn = event.target.closest('.upload-toggle');
+    if (!btn) return;
+    const allow = btn.dataset.allowed !== '1';
+    btn.disabled = true;
+    try {
+      await api('/api/admin/upload-permission', {
+        method: 'POST',
+        body: JSON.stringify({ patientId: btn.dataset.patient, userId: btn.dataset.user, allowed: allow })
+      });
+      // 同步本地状态，重绘后开关文案与徽标一致
+      const archive = archives.find(a => a.id === btn.dataset.patient);
+      const member = archive?.members.find(m => m.userId === btn.dataset.user);
+      if (member) member.canUpload = allow;
+      renderRows();
+      toast(allow ? t('已开通上传权限') : t('已取消上传权限'));
+    } catch (err) {
+      toast(err.message);
+      btn.disabled = false;
+    }
+  });
+} catch (err) {
+  toast(err.message);
+}
+</script>
+</body>
+</html>

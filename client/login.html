@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN" data-title="登录">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 · 家庭健康档案</title>
+<link rel="stylesheet" href="/client/style.css">
+</head>
+<body class="auth-body">
+<div class="auth-shell">
+  <div class="lang-bar" id="langSlot"></div>
+  <div class="auth-brand">
+    <h1 data-i18n="家庭健康档案">家庭健康档案</h1>
+  </div>
+
+  <div class="auth-card">
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab active" data-tab="login" role="tab" aria-selected="true" data-i18n="登录">登录</button>
+      <button type="button" class="tab" data-tab="register" role="tab" aria-selected="false" data-i18n="注册">注册</button>
+    </div>
+
+    <form id="loginForm" class="auth-form">
+      <div class="field">
+        <label class="label" for="loginName" data-i18n="用户名">用户名</label>
+        <input id="loginName" autocomplete="username" required data-i18n-ph="用户名或昵称" placeholder="用户名或昵称">
+      </div>
+      <div class="field">
+        <label class="label" for="loginPass" data-i18n="密码">密码</label>
+        <input id="loginPass" type="password" autocomplete="current-password" required data-i18n-ph="密码" placeholder="密码">
+      </div>
+      <button class="btn btn-primary" type="submit" data-i18n="登录">登录</button>
+    </form>
+
+    <form id="registerForm" class="auth-form" hidden>
+      <div class="field">
+        <label class="label" for="regName"><span data-i18n="用户名">用户名</span> <small data-i18n="2-24 位字母、数字、下划线或中文">2-24 位字母、数字、下划线或中文</small></label>
+        <input id="regName" autocomplete="username" required maxlength="24" data-i18n-ph="如：tl" placeholder="如：tl">
+      </div>
+      <div class="field">
+        <label class="label" for="regPass"><span data-i18n="密码">密码</span> <small data-i18n="至少 6 位">至少 6 位</small></label>
+        <input id="regPass" type="password" autocomplete="new-password" required minlength="6" data-i18n-ph="设置密码" placeholder="设置密码">
+      </div>
+      <div class="field">
+        <label class="label" for="regConfirm" data-i18n="确认密码">确认密码</label>
+        <input id="regConfirm" type="password" autocomplete="new-password" required minlength="6" data-i18n-ph="再输一遍" placeholder="再输一遍">
+      </div>
+      <button class="btn btn-primary" type="submit" data-i18n="创建账号">创建账号</button>
+    </form>
+
+    <div class="form-err" id="formErr" hidden></div>
+
+    <div class="test-hint">
+      <span><span data-i18n="测试账号">测试账号</span>：<code>test</code> / <code>test1234</code></span>
+      <button type="button" class="btn-small" id="fillTest" data-i18n="一键填充">一键填充</button>
+    </div>
+  </div>
+
+  <div class="auth-foot">
+    <p data-i18n="数据保存在这台服务器上，密码加密存储，不会发送给第三方。">数据保存在这台服务器上，密码加密存储，不会发送给第三方。</p>
+    <p data-i18n="本应用只整理和展示报告，不构成医疗意见，解读结果请以医生为准。">本应用只整理和展示报告，不构成医疗意见，解读结果请以医生为准。</p>
+  </div>
+</div>
+
+<script type="module">
+import { api, toast } from './api.mjs';
+import { initI18n, t } from './i18n.mjs';
+
+initI18n();
+
+const $ = id => document.getElementById(id);
+const errBox = $('formErr');
+
+function showErr(text) {
+  if (!text) { errBox.hidden = true; return; }
+  errBox.textContent = text;
+  errBox.hidden = false;
+}
+
+// Tab switching keeps one visible form at a time.
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => {
+      t.classList.toggle('active', t === tab);
+      t.setAttribute('aria-selected', t === tab ? 'true' : 'false');
+    });
+    $('loginForm').hidden = tab.dataset.tab !== 'login';
+    $('registerForm').hidden = tab.dataset.tab !== 'register';
+    showErr('');
+  });
+});
+
+$('fillTest').addEventListener('click', () => {
+  document.querySelector('[data-tab="login"]').click();
+  $('loginName').value = 'test';
+  $('loginPass').value = 'test1234';
+  showErr('');
+});
+
+async function go(url, body) {
+  showErr('');
+  try {
+    await api(url, { method: 'POST', body: JSON.stringify(body) });
+    location.href = '/';
+  } catch (err) {
+    showErr(err.message);
+  }
+}
+
+$('loginForm').addEventListener('submit', event => {
+  event.preventDefault();
+  go('/api/auth/login', { username: $('loginName').value.trim(), password: $('loginPass').value });
+});
+
+$('registerForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const pass = $('regPass').value;
+  if (pass !== $('regConfirm').value) { showErr(t('两次输入的密码不一致')); return; }
+  go('/api/auth/register', { username: $('regName').value.trim(), password: pass, confirm: $('regConfirm').value });
+});
+</script>
+</body>
+</html>

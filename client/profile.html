@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN" data-title="患者资料">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>患者资料 · 家庭健康档案</title>
+<link rel="stylesheet" href="/client/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="topline">
+      <a class="back-btn" href="/" data-i18n="← 返回首页">← 返回首页</a>
+    </div>
+    <h1 id="title" data-i18n="患者资料">患者资料</h1>
+    <div class="meta" id="subtitle"></div>
+  </header>
+
+  <form class="card" id="form">
+    <div class="field">
+      <label class="label" for="name"><span data-i18n="姓名">姓名</span> <small data-i18n="必填">必填</small></label>
+      <input id="name" name="name" required maxlength="40" data-i18n-ph="如：王秀兰" placeholder="如：王秀兰">
+    </div>
+    <div class="field">
+      <label class="label" for="birthDate"><span data-i18n="出生日期">出生日期</span> <small data-i18n="精确到年月日，必填">精确到年月日，必填</small></label>
+      <input id="birthDate" name="birthDate" type="date" required>
+    </div>
+    <div class="field">
+      <label class="label" for="gender" data-i18n="性别">性别</label>
+      <select id="gender" name="gender">
+        <option value="" data-i18n="不填写">不填写</option>
+        <option value="男" data-i18n="男">男</option>
+        <option value="女" data-i18n="女">女</option>
+      </select>
+    </div>
+    <div class="field">
+      <label class="label" for="notes"><span data-i18n="备注">备注</span> <small data-i18n="慢性病、长期用药等，仅家人与关注者可见">慢性病、长期用药等，仅家人与关注者可见</small></label>
+      <textarea id="notes" name="notes" maxlength="500" data-i18n-ph="如：高血压十年，服用氨氯地平" placeholder="如：高血压十年，服用氨氯地平"></textarea>
+    </div>
+    <button class="btn btn-primary" type="submit" id="saveBtn" data-i18n="保存资料">保存资料</button>
+  </form>
+
+  <section class="card" id="bindCard" hidden>
+    <label class="label"><span data-i18n="分享给家人">分享给家人</span> <small data-i18n="把绑定码发给家人，对方在「绑定档案」页输入即可关注">把绑定码发给家人，对方在「绑定档案」页输入即可关注</small></label>
+    <div class="bind-row">
+      <code class="bind-code" id="bindCode"></code>
+      <button type="button" class="btn-small" id="copyCodeBtn" data-i18n="复制">复制</button>
+    </div>
+  </section>
+</div>
+
+<script type="module">
+import { api, toast, activePatient, setActivePatient } from './api.mjs';
+import { initI18n, t } from './i18n.mjs';
+
+initI18n();
+
+const form = document.getElementById('form');
+const saveBtn = document.getElementById('saveBtn');
+const isNew = new URLSearchParams(location.search).get('new') === '1';
+const $ = id => document.getElementById(id);
+
+let patient = null;
+const state = await api('/api/state').catch(err => { toast(err.message); throw err; });
+
+if (isNew) {
+  $('title').textContent = t('新患者资料');
+  $('subtitle').textContent = t('为另一位家人建立独立档案，报告互不相通');
+} else {
+  patient = activePatient(state.patients);
+  const isOwner = patient && patient.ownerUserId === state.user.id;
+  if (patient) {
+    form.name.value = patient.name || '';
+    form.birthDate.value = patient.birthDate || '';
+    form.gender.value = patient.gender || '';
+    form.notes.value = patient.notes || '';
+  }
+  if (patient && !isOwner) {
+    // 绑定成员只读：禁用编辑、隐藏保存与绑定卡
+    ['name', 'birthDate', 'gender', 'notes'].forEach(id => { document.getElementById(id).disabled = true; });
+    saveBtn.hidden = true;
+    $('subtitle').textContent = t('你是被绑定的关注者，仅可查看资料，不能修改');
+  }
+  if (patient && isOwner && patient.bindCode) {
+    $('bindCard').hidden = false;
+    $('bindCode').textContent = patient.bindCode;
+  }
+}
+
+$('copyCodeBtn').addEventListener('click', async () => {
+  const code = $('bindCode').textContent.trim();
+  try {
+    await navigator.clipboard.writeText(code);
+    toast(t('绑定码 {code} 已复制', { code }));
+  } catch {
+    toast(t('绑定码：{code}', { code }));
+  }
+});
+
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  saveBtn.disabled = true;
+  try {
+    const saved = await api('/api/patients', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: patient?.id,
+        name: form.name.value,
+        birthDate: form.birthDate.value,
+        gender: form.gender.value,
+        notes: form.notes.value
+      })
+    });
+    if (isNew) setActivePatient(saved.id);
+    location.href = isNew ? '/profile.html' : '/';
+  } catch (err) {
+    toast(err.message);
+    saveBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

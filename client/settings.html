@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN" data-title="应用设置">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>应用设置 · 家庭健康档案</title>
+<link rel="stylesheet" href="/client/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="topline">
+      <a class="back-btn" href="/" data-i18n="← 返回首页">← 返回首页</a>
+    </div>
+    <h1 data-i18n="应用设置">应用设置</h1>
+    <div class="meta" data-i18n="AI 说明 · 导出档案">AI 说明 · 导出档案</div>
+  </header>
+
+  <section class="card">
+    <label class="label" data-i18n="AI 识别与解读">AI 识别与解读</label>
+    <div class="note" style="margin-bottom:8px" data-i18n="由服务方统一提供 DeepSeek V4.1 Flash，无需配置 Key 或选择模型。">由服务方统一提供 DeepSeek V4.1 Flash，无需配置 Key 或选择模型。</div>
+    <div class="ai-status" id="aiStatus"></div>
+  </section>
+
+  <section class="card">
+    <label class="label"><span data-i18n="导出患者档案">导出患者档案</span> <small data-i18n="导出为 Markdown 文件">导出为 Markdown 文件</small></label>
+    <div class="note" style="margin-bottom:12px" data-i18n="导出该患者的全部报告为 .md 文件，可打印或发给医生。">导出该患者的全部报告为 .md 文件，可打印或发给医生。</div>
+    <div class="bind-row">
+      <select id="exportPatient"></select>
+      <button type="button" class="btn-small" id="exportBtn" data-i18n="导出">导出</button>
+    </div>
+    <div class="ai-status" id="backupStatus"></div>
+  </section>
+
+</div>
+
+<script type="module">
+import { api, esc, toast } from './api.mjs';
+import { initI18n, t } from './i18n.mjs';
+
+initI18n();
+
+const $ = id => document.getElementById(id);
+const exportBtn = $('exportBtn');
+const exportPatient = $('exportPatient');
+
+function setStatus(text, kind) {
+  const el = $('backupStatus');
+  el.textContent = text;
+  el.className = `ai-status ${kind || ''}`;
+}
+
+let patientCount = 0;
+
+try {
+  const state = await api('/api/state');
+
+  // AI 状态说明（只读，服务端统一配置）
+  const aiEl = $('aiStatus');
+  if (state.aiEnabled) {
+    aiEl.textContent = t('AI 已启用（模型：{model}）。报告识别与通俗解读可直接使用。', { model: state.aiModel });
+    aiEl.className = 'ai-status ok';
+  } else {
+    aiEl.textContent = t('AI 尚未启用：服务端未配置 LLM_API_KEY，识别与解读暂不可用，仍可手动录入报告。');
+    aiEl.className = 'ai-status';
+  }
+
+  // 患者下拉：按名称排序，方便找到要导出的那一位。
+  const list = [...state.patients].sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh'));
+  patientCount = list.length;
+  exportPatient.innerHTML = list
+    .map(p => `<option value="${esc(p.id)}">${esc(p.name)}${t('（{n} 份报告）', { n: state.reports.filter(r => r.patientId === p.id).length })}</option>`)
+    .join('');
+  if (!list.length) {
+    exportPatient.innerHTML = `<option value="">${t('还没有患者档案')}</option>`;
+    exportPatient.disabled = true;
+    exportBtn.disabled = true;
+    setStatus(t('还没有可导出的患者档案，先去首页新建一份。'), '');
+  }
+} catch (err) {
+  toast(err.message);
+}
+
+// 导出：请求服务端生成该患者的 Markdown，再触发浏览器下载。
+exportBtn.addEventListener('click', async () => {
+  const patientId = exportPatient.value;
+  if (!patientId) { setStatus(t('请先选择要导出的患者'), 'err'); return; }
+  exportBtn.disabled = true;
+  setStatus(t('正在生成…'), '');
+  try {
+    const res = await fetch(`/api/export/patient/${encodeURIComponent(patientId)}`);
+    if (res.status === 401) { location.href = '/login.html'; return; }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+
+    const cd = res.headers.get('Content-Disposition') || '';
+    const star = /filename\*=UTF-8''([^;]+)/i.exec(cd);
+    const plain = /filename="?([^";]+)"?/i.exec(cd);
+    a.download = star ? decodeURIComponent(star[1]) : (plain ? plain[1] : 'health-record.md');
+
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setStatus(t('已导出该患者的档案，用任意编辑器或浏览器都能打开。'), 'ok');
+  } catch (err) {
+    setStatus(`${t('导出')} ✕ ${err.message}`, 'err');
+  } finally {
+    exportBtn.disabled = patientCount === 0;
+  }
+});
+</script>
+</body>
+</html>

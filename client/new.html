@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="zh-CN" data-title="新建报告">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>新建报告 · 家庭健康档案</title>
+<link rel="stylesheet" href="/client/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="topline">
+      <a class="back-btn" href="/timeline.html" data-i18n="← 返回">← 返回</a>
+    </div>
+    <h1 id="pageTitle" data-i18n="新建报告">新建报告</h1>
+    <div class="meta" id="whoMeta"></div>
+  </header>
+
+  <form id="form">
+    <section class="card">
+      <div class="field">
+        <label class="label" for="photoInput"><span data-i18n="报告截图 / PDF">报告截图 / PDF</span> <small data-i18n="选 1 份：识别后核对再保存；选多份：逐份识别、各自保存">选 1 份：识别后核对再保存；选多份：逐份识别、各自保存</small></label>
+        <input id="photoInput" type="file" accept="image/*,.pdf" multiple>
+        <div id="photoHint" class="note" style="margin-top:8px" data-i18n="图片只用于识别，不保存原图。">图片只用于识别，不保存原图。</div>
+        <div id="photoPreview" class="thumbs" style="margin-top:10px"></div>
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-ghost" id="extractBtn" hidden data-i18n="AI 识别并预填">AI 识别并预填</button>
+        <button type="button" class="btn btn-ghost" id="clearFilesBtn" hidden data-i18n="取消选择">取消选择</button>
+      </div>
+      <div class="note" id="extractHint" style="margin-top:8px"></div>
+    </section>
+
+    <section class="card">
+      <div class="field">
+        <label class="label" for="type"><span data-i18n="报告类型">报告类型</span> <small data-i18n="如：血常规、超声报告、胸部CT">如：血常规、超声报告、胸部CT</small></label>
+        <input id="type" data-i18n-ph="报告" placeholder="报告">
+      </div>
+      <div class="field">
+        <label class="label" for="hospital" data-i18n="医院 / 机构">医院 / 机构</label>
+        <input id="hospital" data-i18n-ph="如：市人民医院" placeholder="如：市人民医院">
+      </div>
+      <div class="field">
+        <label class="label" for="tag"><span data-i18n="分类标签">分类标签</span> <small data-i18n="用于时间线分类筛选">用于时间线分类筛选</small></label>
+        <select id="tag">
+          <option value="" data-i18n="无标签">无标签</option>
+          <option value="体检" data-i18n="体检">体检</option>
+          <option value="复查" data-i18n="复查">复查</option>
+          <option value="门诊" data-i18n="门诊">门诊</option>
+          <option value="住院" data-i18n="住院">住院</option>
+          <option value="急诊" data-i18n="急诊">急诊</option>
+          <option value="其他" data-i18n="其他">其他</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="collectedAt"><span data-i18n="检查 / 采样日期">检查 / 采样日期</span> <small data-i18n="必填">必填</small></label>
+        <input id="collectedAt" type="date" required>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="topline" style="margin-bottom:6px">
+        <label class="label" style="margin:0"><span data-i18n="基本信息核对">基本信息核对</span> <small data-i18n="AI 识别后自动填入，请逐项核对">AI 识别后自动填入，请逐项核对</small></label>
+      </div>
+      <div class="meta-grid">
+        <div class="field span2" style="margin-bottom:0">
+          <input id="metaPatientName" data-i18n-ph="报告上的患者姓名" placeholder="报告上的患者姓名">
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <select id="metaGender">
+            <option value="" data-i18n="性别未填">性别未填</option>
+            <option value="男" data-i18n="男">男</option>
+            <option value="女" data-i18n="女">女</option>
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <input id="metaAge" data-i18n-ph="年龄" placeholder="年龄" inputmode="numeric">
+        </div>
+        <div class="field span2" style="margin-bottom:0">
+          <input id="metaDepartment" data-i18n-ph="科别 / 科室，如：心血管内科" placeholder="科别 / 科室，如：心血管内科">
+        </div>
+        <div class="field span2" style="margin-bottom:0">
+          <input id="metaDoctor" data-i18n-ph="医师（选填）" placeholder="医师（选填）">
+        </div>
+      </div>
+      <div class="warn-box" id="nameWarn" hidden></div>
+    </section>
+
+    <section class="card" id="itemsCard">
+      <div class="topline" style="margin-bottom:6px">
+        <label class="label" style="margin:0"><span data-i18n="检验项目">检验项目</span> <small data-i18n="有数值的检验单才需要；超声等文字报告可留空">有数值的检验单才需要；超声等文字报告可留空</small></label>
+      </div>
+      <div id="items"></div>
+      <button type="button" class="btn-small" id="addItemBtn" style="margin-top:12px" data-i18n="＋ 添加一项">＋ 添加一项</button>
+    </section>
+
+    <section class="card" id="docCard">
+      <div class="topline" style="margin-bottom:6px">
+        <label class="label" style="margin:0"><span data-i18n="报告内容">报告内容</span> <small data-i18n="AI 整理的报告全文，可直接在此校对修改">AI 整理的报告全文，可直接在此校对修改</small></label>
+      </div>
+      <textarea id="docInput" data-i18n-ph="识别后这里会显示整理好的报告全文；手动录入时也可以直接粘贴报告文字。" placeholder="识别后这里会显示整理好的报告全文；手动录入时也可以直接粘贴报告文字。"></textarea>
+    </section>
+
+    <div class="btn-row">
+      <button type="button" class="btn btn-ghost" id="cancelBtn" data-i18n="取消">取消</button>
+      <button type="submit" class="btn btn-primary" id="saveBtn" data-i18n="保存报告">保存报告</button>
+    </div>
+  </form>
+</div>
+
+<script type="module">
+import { api, esc, toast, activePatient, setActivePatient } from './api.mjs';
+import { initI18n, t } from './i18n.mjs';
+
+initI18n();
+
+const editId = new URLSearchParams(location.search).get('id');
+const $ = id => document.getElementById(id);
+const MAX_FILES = 10; // 批量上传最多同时 10 份
+
+const state = await api('/api/state').catch(err => { toast(err.message); throw err; });
+
+let patient = activePatient(state.patients);
+if (!patient) {
+  toast(t('请先创建患者资料'));
+  location.href = '/profile.html';
+}
+
+// 绑定成员只读：只有档案创建者能新增/修改报告，其余一律返回时间线。
+if (patient && !patient.canUpload) {
+  toast(t('你对该档案没有上传权限，仅可查看，不能新增报告'));
+  setTimeout(() => { location.href = '/timeline.html'; }, 700);
+  throw new Error('无上传权限');
+}
+
+let editReport = null;
+if (editId) {
+  try {
+    editReport = await api(`/api/reports/${encodeURIComponent(editId)}`);
+    // Editing a report of another patient switches the active patient.
+    patient = state.patients.find(p => p.id === editReport.patientId) || patient;
+    setActivePatient(patient.id);
+    $('pageTitle').textContent = t('编辑报告');
+    $('saveBtn').textContent = t('保存修改');
+  } catch (err) {
+    toast(err.message);
+    setTimeout(() => { location.href = '/timeline.html'; }, 1200);
+    throw err;
+  }
+}
+
+$('whoMeta').textContent = t('正在为「{name}」记录 · 图片只用于识别，不会保存原图', { name: patient.name });
+
+let extractImages = [];   // in-memory only, never uploaded for keeps
+let pdfTexts = [];        // per-page text pulled from PDF text layers
+let photoCount = 0;
+let extractMode = 'images'; // 'texts' when PDFs carry a usable text layer
+let items = [];
+
+const photoInput = $('photoInput');
+const extractBtn = $('extractBtn');
+const extractHint = $('extractHint');
+const itemsBox = $('items');
+
+const canExtract = state.aiEnabled;
+if (canExtract) {
+  extractBtn.hidden = false;
+} else {
+  extractHint.textContent = t('AI 识别暂未启用，直接手动录入即可。');
+}
+
+// 一个按钮两种行为：选 1 份 → 识别后预填表单供核对；选多份 → 逐份识别、各自存成一份报告。
+function updateExtractBtn(n) {
+  if (!canExtract) return;
+  const count = Math.min(n, MAX_FILES);
+  extractBtn.textContent = count > 1
+    ? t('AI 识别 {n} 份文件，各自存为报告', { n: count })
+    : t('AI 识别并预填');
+}
+
+// 本地日期（YYYY-MM-DD）：toISOString 是 UTC，早上 8 点前会变成昨天。
+const todayLocal = () => {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
+$('collectedAt').value = todayLocal();
+
+function blankItem() {
+  return { name: '', display: '', value: '', unit: '', refText: '', corrected: true };
+}
+
+// Rebuild readable lines from a PDF page's text layer (x/y aware).
+async function pdfPageText(page) {
+  const tc = await page.getTextContent();
+  const lines = [];
+  for (const it of tc.items) {
+    if (!it.str || !it.str.trim()) continue;
+    const y = Math.round(it.transform[5]);
+    const x = it.transform[4];
+    const line = lines.find(l => Math.abs(l.y - y) < 4);
+    if (line) line.parts.push({ x, s: it.str });
+    else lines.push({ y, parts: [{ x, s: it.str }] });
+  }
+  lines.sort((a, b) => b.y - a.y);
+  return lines
+    .map(l => { l.parts.sort((a, b) => a.x - b.x); return l.parts.map(p => p.s).join(' '); })
+    .join('\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
+}
+
+function renderItems() {
+  itemsBox.innerHTML = items.map((item, idx) => `
+    <div class="item-row" data-idx="${idx}">
+      <button type="button" class="item-remove" data-remove="${idx}">删除</button>
+      <input data-field="name" placeholder="${t('项目名称 * 如：白细胞')}" value="${esc(item.name)}">
+      <input data-field="value" placeholder="${t('数值 * 如：6.2')}" inputmode="decimal" value="${esc(item.value)}">
+      <input data-field="unit" placeholder="${t('单位 如：10^9/L')}" value="${esc(item.unit)}">
+      <input data-field="refText" placeholder="${t('参考范围 如：3.5-9.5')}" value="${esc(item.refText)}">
+      <input class="span2" data-field="display" placeholder="${t('英文缩写（选填）如：WBC')}" value="${esc(item.display)}">
+    </div>`).join('');
+}
+
+// Warn when the report's printed patient name differs from the archive
+// currently being recorded — the report may belong to another family member.
+function checkName(extracted) {
+  const warn = $('nameWarn');
+  const printed = String(extracted || '').trim();
+  if (printed && patient.name && printed !== patient.name.trim()) {
+    warn.textContent = t(
+      '报告上的姓名是「{printed}」，与当前档案「{name}」不一致。如是家人的报告，请先到首页切换患者档案；如是识别笔误，直接改成正确姓名即可。',
+      { printed, name: patient.name }
+    );
+    warn.hidden = false;
+  } else {
+    warn.hidden = true;
+  }
+}
+
+function setMeta(fields) {
+  if (fields.patientName) $('metaPatientName').value = fields.patientName;
+  if (fields.gender) $('metaGender').value = fields.gender;
+  if (fields.age) $('metaAge').value = fields.age;
+  if (fields.department) $('metaDepartment').value = fields.department;
+  if (fields.doctor) $('metaDoctor').value = fields.doctor;
+  checkName($('metaPatientName').value);
+}
+
+function applyPrefill(fields, prefilledItems, doc) {
+  $('type').value = fields.reportType || $('type').value;
+  $('hospital').value = fields.hospital || $('hospital').value;
+  $('collectedAt').value = fields.collectedAt || $('collectedAt').value;
+  setMeta(fields);
+
+  const docText = String(doc || '').trim();
+  if (docText) $('docInput').value = docText;
+
+  if (prefilledItems.length) {
+    items = prefilledItems.map(item => ({
+      name: item.name,
+      display: item.display || '',
+      value: String(item.value),
+      unit: item.unit || '',
+      refText: item.refText || '',
+      corrected: false
+    }));
+    $('itemsCard').hidden = false;
+    renderItems();
+  } else if (docText) {
+    // Narrative report (ultrasound, CT, 病历…): the item grid is noise here.
+    items = [];
+    $('itemsCard').hidden = true;
+  }
+
+  if (prefilledItems.length && docText) {
+    toast(t('识别到 {n} 项检验项目和报告全文，请逐项核对后保存', { n: prefilledItems.length }));
+  } else if (prefilledItems.length) {
+    toast(t('识别到 {n} 项，请逐项核对数值后保存', { n: prefilledItems.length }));
+  } else if (docText) {
+    toast(t('报告全文已整理好，请核对基本信息与内容后保存'));
+  } else {
+    toast(t('没有识别到内容，请手动录入'));
+  }
+}
+
+// Edit mode: prefill everything from the stored report.
+if (editReport) {
+  $('type').value = editReport.type || '';
+  $('hospital').value = editReport.hospital || '';
+  $('collectedAt').value = editReport.collectedAt || '';
+  $('tag').value = editReport.tag || '';
+  $('docInput').value = editReport.doc || '';
+  setMeta(editReport.meta || {});
+  items = (editReport.items || []).map(item => ({
+    name: item.name,
+    display: item.display || '',
+    value: String(item.value),
+    unit: item.unit || '',
+    refText: item.refText || '',
+    corrected: item.corrected
+  }));
+  if (!items.length && (editReport.doc || '').trim()) $('itemsCard').hidden = true;
+}
+else {
+  items = [blankItem()];
+}
+renderItems();
+
+$('metaPatientName').addEventListener('input', () => checkName($('metaPatientName').value));
+
+itemsBox.addEventListener('input', event => {
+  const row = event.target.closest('.item-row');
+  if (!row) return;
+  const idx = Number(row.dataset.idx);
+  items[idx][event.target.dataset.field] = event.target.value;
+  // US-04: any human edit marks the item as user-corrected.
+  items[idx].corrected = true;
+});
+
+itemsBox.addEventListener('click', event => {
+  const btn = event.target.closest('[data-remove]');
+  if (!btn) return;
+  items.splice(Number(btn.dataset.remove), 1);
+  if (!items.length) items.push(blankItem());
+  renderItems();
+});
+
+$('addItemBtn').addEventListener('click', () => {
+  items.push(blankItem());
+  renderItems();
+});
+
+// 压缩图片到最长边 1600px（JPEG），大幅减小体积，避免批量上传时请求体过大。
+async function compressImage(file) {
+  const url = URL.createObjectURL(file);
+  const img = await new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error('读取图片失败'));
+    im.src = url;
+  });
+  try {
+    const maxSide = 1600;
+    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL('image/jpeg', 0.8);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// 处理单个文件为图片/文字（批量模式逐份使用）。
+async function prepareFile(file) {
+  const images = [];
+  const texts = [];
+  if ((file.type || '').toLowerCase() === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+    const pdfjsLib = await import('/client/vendor/pdf.min.mjs');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/client/vendor/pdf.worker.min.mjs';
+    const buffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    const pages = Math.min(pdf.numPages, 5);
+    for (let i = 1; i <= pages; i++) {
+      const page = await pdf.getPage(i);
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.min(2, 1400 / Math.max(base.width, base.height));
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      images.push(canvas.toDataURL('image/jpeg', 0.85));
+      texts.push(await pdfPageText(page).catch(() => ''));
+    }
+  } else if (file.type.startsWith('image/')) {
+    if (file.size > 20 * 1024 * 1024) throw new Error(t('图片超过 20 MB'));
+    images.push(await compressImage(file));
+  } else {
+    throw new Error(t('不是图片或 PDF'));
+  }
+  return { images, texts };
+}
+
+// Render selected images / PDF pages into in-memory data URLs.
+photoInput.addEventListener('change', async () => {
+  $('photoPreview').innerHTML = '';
+  $('photoHint').textContent = '';
+  extractImages = [];
+  pdfTexts = [];
+  photoCount = 0;
+  const files = [...photoInput.files];
+  $('clearFilesBtn').hidden = files.length === 0;
+  updateExtractBtn(files.length);
+  if (!files.length) return;
+  if (files.length > MAX_FILES) {
+    toast(t('一次最多识别 {n} 份，本次已取前 {n} 份', { n: MAX_FILES }));
+  }
+
+  // 多份文件 = 多份独立报告：识别时逐份处理，这里只做轻量预览，
+  // 避免一次性把几十页 PDF 全部渲染进内存导致卡死。
+  if (files.length > 1) {
+    const picked = files.slice(0, MAX_FILES);
+    $('photoPreview').innerHTML = picked
+      .map(f => `<span class="file-chip" title="${esc(f.name)}">${esc(f.name)}</span>`).join('');
+    $('photoHint').textContent =
+      t('已选 {n} 份文件，点下方按钮逐份识别，每份各存为一份独立报告（不保存原图）。', { n: picked.length });
+    return;
+  }
+
+  $('photoHint').textContent = t('处理中…');
+  try {
+    for (const file of files.slice(0, MAX_FILES)) {
+      if ((file.type || '').toLowerCase() === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+        const pdfjsLib = await import('/client/vendor/pdf.min.mjs');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/client/vendor/pdf.worker.min.mjs';
+        const buffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+        const pages = Math.min(pdf.numPages, 5);
+        for (let i = 1; i <= pages; i++) {
+          const page = await pdf.getPage(i);
+          const base = page.getViewport({ scale: 1 });
+          const scale = Math.min(2, 1400 / Math.max(base.width, base.height));
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(viewport.width);
+          canvas.height = Math.round(viewport.height);
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+          extractImages.push(canvas.toDataURL('image/jpeg', 0.85));
+          // Hospital PDFs almost always carry a text layer — reading the text
+          // directly beats OCR-by-vision in speed, cost and accuracy.
+          pdfTexts.push(await pdfPageText(page).catch(() => ''));
+        }
+        $('photoHint').textContent = t('PDF 共 {total} 页，已准备前 {n} 页', { total: pdf.numPages, n: pages });
+      } else if (file.type.startsWith('image/')) {
+        if (file.size > 20 * 1024 * 1024) { toast(t('「{name}」超过 20 MB，已跳过', { name: file.name })); continue; }
+        photoCount += 1;
+        extractImages.push(await compressImage(file));
+      } else {
+        toast(t('「{name}」不是图片或 PDF，已跳过', { name: file.name }));
+      }
+    }
+    $('photoPreview').innerHTML = extractImages.map(url =>
+      `<img class="thumb" src="${url}" alt="待识别页面">`).join('');
+    extractMode = photoCount === 0 && pdfTexts.length && pdfTexts.every(t => t.length >= 20)
+      ? 'texts' : 'images';
+    if (!photoCount && pdfTexts.length) {
+      $('photoHint').textContent = extractMode === 'texts'
+        ? t('PDF 含文字层，识别时直接读文字，更快更省；原图与文字都不会保存。')
+        : t('这份 PDF 没有文字层（扫描件），将按页面图片识别；识别后不保存原图。');
+    } else if (!$('photoHint').textContent) {
+      $('photoHint').textContent = t('已准备 {n} 张图片，识别后不会保存原图。', { n: extractImages.length });
+    }
+  } catch (err) {
+    toast(err.message || t('文件处理失败'));
+    extractImages = [];
+    pdfTexts = [];
+    $('photoPreview').innerHTML = '';
+  }
+});
+
+// 取消选择：清掉已选文件与预览，不离开页面（已填的表单内容保留）。
+$('clearFilesBtn').addEventListener('click', () => {
+  photoInput.value = '';
+  extractImages = [];
+  pdfTexts = [];
+  photoCount = 0;
+  extractMode = 'images';
+  $('photoPreview').innerHTML = '';
+  $('photoHint').textContent = t('已取消选择，可以重新选文件。');
+  $('clearFilesBtn').hidden = true;
+  updateExtractBtn(0);
+});
+
+// 取消：放弃本次录入，回时间线（保存按钮仍在页面最下方）。
+$('cancelBtn').addEventListener('click', () => {
+  location.href = '/timeline.html';
+});
+
+// 批量导入：每份文件单独识别，各自保存成一份独立报告。
+async function batchImport(files) {
+  if (!confirm(t('将把选中的 {n} 份文件分别识别，并各保存为一份独立报告（不保留原图）。是否继续？', { n: files.length }))) return;
+  extractBtn.disabled = true;
+  let ok = 0;
+  const failed = [];
+  for (let i = 0; i < files.length; i++) {
+    extractBtn.textContent = t('识别中 {i}/{n}…', { i: i + 1, n: files.length });
+    try {
+      const prep = await prepareFile(files[i]);
+      const useTexts = !prep.images.length && prep.texts.some(t => t.length >= 20);
+      const payload = useTexts
+        ? { patientId: patient.id, texts: prep.texts }
+        : { patientId: patient.id, images: prep.images };
+      const result = await api('/api/extract', { method: 'POST', body: JSON.stringify(payload) });
+      if (!result.ok || result.quality === 'unreadable') { failed.push(files[i].name); continue; }
+      const f = result.fields || {};
+      await api('/api/reports', {
+        method: 'POST',
+        body: JSON.stringify({
+          patientId: patient.id,
+          type: f.reportType || '报告',
+          hospital: f.hospital || '',
+          tag: '',
+          collectedAt: f.collectedAt || todayLocal(),
+          items: result.items || [],
+          doc: result.doc || '',
+          meta: {
+            patientName: f.patientName || '',
+            gender: ['男', '女'].includes(f.gender) ? f.gender : '',
+            age: f.age || '',
+            department: f.department || '',
+            doctor: f.doctor || ''
+          }
+        })
+      });
+      ok++;
+    } catch (err) {
+      failed.push(files[i].name);
+    }
+  }
+  extractBtn.disabled = false;
+  updateExtractBtn(files.length);
+  toast(failed.length
+    ? t('批量导入完成：成功 {ok} 份，失败 {n} 份', { ok, n: failed.length })
+    : t('批量导入完成：成功 {ok} 份', { ok }));
+  setTimeout(() => { location.href = '/timeline.html'; }, 1400);
+}
+
+// US-03 / US-05: 单份文件 → 识别并预填表单；多份文件 → 逐份识别各自保存。
+extractBtn.addEventListener('click', async () => {
+  const files = [...photoInput.files].slice(0, MAX_FILES);
+  if (!files.length) {
+    toast(t('请先选择报告截图或 PDF'));
+    return;
+  }
+  if (files.length > 1) {
+    await batchImport(files);
+    return;
+  }
+
+  if (extractMode === 'texts' && pdfTexts.length) {
+    // keep current payload selection
+  } else if (!extractImages.length) {
+    toast(t('请先选择报告截图或 PDF'));
+    return;
+  }
+  extractBtn.disabled = true;
+  extractBtn.textContent = t('识别中…（报告长时可能要十几秒）');
+  try {
+    const payload = extractMode === 'texts'
+      ? { patientId: patient.id, texts: pdfTexts }
+      : { patientId: patient.id, images: extractImages };
+    const result = await api('/api/extract', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    if (!result.ok) {
+      toast(result.reason === 'not_configured'
+        ? t('AI 服务暂不可用，请稍后再试')
+        : result.reason || t('识别失败'));
+      return;
+    }
+    if (result.quality === 'unreadable') {
+      toast(t('照片不够清晰，无法可靠读数，请重拍一张'));
+      return;
+    }
+    applyPrefill(result.fields, result.items || [], result.doc);
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    extractBtn.disabled = false;
+    updateExtractBtn(1);
+  }
+});
+
+$('form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!$('collectedAt').value) { toast(t('请填写检查/采样日期')); return; }
+  const usable = items.filter(i => i.name.trim() && i.value !== '');
+  const doc = $('docInput').value.trim();
+  if (!usable.length && !doc) { toast(t('请填写至少一条检验项目，或录入报告文字内容')); return; }
+  for (const item of usable) {
+    if (!Number.isFinite(Number(item.value))) {
+      toast(t('「{name}」的数值不是有效数字', { name: item.name }));
+      return;
+    }
+  }
+  $('saveBtn').disabled = true;
+  try {
+    const payload = {
+      patientId: patient.id,
+      type: $('type').value,
+      hospital: $('hospital').value,
+      tag: $('tag').value,
+      collectedAt: $('collectedAt').value,
+      photo: editReport ? editReport.photo : null,
+      items: usable,
+      doc,
+      meta: {
+        patientName: $('metaPatientName').value.trim(),
+        gender: $('metaGender').value,
+        age: $('metaAge').value.trim(),
+        department: $('metaDepartment').value.trim(),
+        doctor: $('metaDoctor').value.trim()
+      }
+    };
+    const report = editId
+      ? await api(`/api/reports/${encodeURIComponent(editId)}`, { method: 'PUT', body: JSON.stringify(payload) })
+      : await api('/api/reports', { method: 'POST', body: JSON.stringify(payload) });
+    location.href = `/report.html?id=${encodeURIComponent(report.id)}`;
+  } catch (err) {
+    toast(err.message);
+    $('saveBtn').disabled = false;
+  }
+});
+</script>
+</body>
+</html>
