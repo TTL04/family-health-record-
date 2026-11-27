@@ -10,85 +10,155 @@
 <div class="wrap">
   <header>
     <div class="topline">
-      <span class="eyebrow">Report detail</span>
-      <a class="mini-link" href="/">← 时间线</a>
+      <a class="back-btn" href="/timeline.html" id="backBtn" data-i18n="← 返回时间线">← 返回时间线</a>
     </div>
     <h1 id="title"></h1>
     <div class="meta" id="meta"></div>
+    <div class="meta" id="reportMeta" style="margin-top:4px"></div>
   </header>
 
   <section class="card summary" id="summary"></section>
 
-  <section class="card">
-    <div class="note" style="margin-bottom:10px">点击任意一行查看通俗解读</div>
+  <section class="card" id="analyzeCard">
+    <div class="topline" style="margin-bottom:6px">
+      <label class="label" style="margin:0"><span data-i18n="AI 分析">AI 分析</span> <small data-i18n="整体解读这份报告">整体解读这份报告</small></label>
+      <button type="button" class="btn-small" id="analyzeBtn" data-i18n="AI 分析">AI 分析</button>
+    </div>
+    <div id="analyzeBox"></div>
+  </section>
+
+  <section class="card" id="docCard" hidden>
+    <label class="label"><span data-i18n="报告内容">报告内容</span> <small data-i18n="按原文整理">按原文整理</small></label>
+    <div class="doc-view" id="docView"></div>
+  </section>
+
+  <section class="card" id="itemsSection">
+    <div class="hint-row" data-i18n="点击任意一行查看通俗解读">点击任意一行查看通俗解读</div>
     <table>
       <thead>
-        <tr><th>项目</th><th>数值</th><th>单位</th><th>参考</th></tr>
+        <tr>
+          <th data-i18n="项目">项目</th>
+          <th data-i18n="数值">数值</th>
+          <th data-i18n="单位">单位</th>
+          <th data-i18n="参考">参考</th>
+        </tr>
       </thead>
       <tbody id="rows"></tbody>
     </table>
     <div id="explainBox"></div>
   </section>
 
-  <section class="card foot" id="photoCard" hidden>
-    <span class="note">原始报告照片仅作存档对照。</span>
-    <a class="mini-link" id="photoLink" href="#" target="_blank" rel="noopener">查看原始照片</a>
-  </section>
-
-  <section class="card">
-    <span class="note">Reference ranges follow the issuing laboratory. For information only — not a medical opinion.</span>
-    <div id="disclaimer" class="note" style="margin-top:6px"></div>
-  </section>
-
-  <button class="btn btn-danger" id="deleteBtn">删除这份报告</button>
+  <button class="btn btn-danger" id="deleteBtn" data-i18n="删除这份报告">删除这份报告</button>
 </div>
 
 <script type="module">
 import { api, esc, toast } from './api.mjs';
-import { isAbnormal, direction, referenceText, abnormalCount, DISCLAIMER } from '/logic.mjs';
+import { initI18n, t } from './i18n.mjs';
+import { isAbnormal, direction, referenceText, abnormalCount } from '/logic.mjs';
+
+initI18n();
 
 const reportId = new URLSearchParams(location.search).get('id');
+const fromHome = new URLSearchParams(location.search).get('from') === 'home';
 const explainBox = document.getElementById('explainBox');
 let currentRow = null;
 
-if (!reportId) { location.href = '/'; }
+if (fromHome) {
+  const backBtn = document.getElementById('backBtn');
+  backBtn.href = '/';
+  backBtn.textContent = t('← 返回首页');
+}
+
+if (!reportId) { location.href = fromHome ? '/' : '/timeline.html'; }
 
 let report;
 try {
   report = await api(`/api/reports/${encodeURIComponent(reportId)}`);
 } catch (err) {
   toast(err.message);
-  setTimeout(() => { location.href = '/'; }, 1200);
+  setTimeout(() => { location.href = fromHome ? '/' : '/timeline.html'; }, 1200);
   throw err;
 }
 
 document.getElementById('title').textContent = report.type;
 document.getElementById('meta').textContent =
-  `${report.hospital || '未记录医院'} · 采样 ${report.collectedAt}`;
-document.getElementById('disclaimer').textContent = DISCLAIMER;
+  `${report.hospital || t('未记录医院')} · ${t('检查 {date}', { date: report.collectedAt })}${report.tag ? ' · ' + t(report.tag) : ''}`;
+// 绑定成员只读：隐藏删除按钮。
+if (!report.isOwner) document.getElementById('deleteBtn').hidden = true;
+
+// Proofread meta: who / where / which department / which doctor.
+{
+  const m = report.meta || {};
+  const bits = [
+    m.patientName && t('姓名 {name}', { name: m.patientName }),
+    m.gender && t(m.gender),
+    m.age && t('{n} 岁', { n: m.age }),
+    m.department && `${m.department}`,
+    m.doctor && t('医师 {name}', { name: m.doctor })
+  ].filter(Boolean);
+  if (bits.length) document.getElementById('reportMeta').textContent = bits.join(' · ');
+}
+
+// Minimal markdown rendering for the organized report text: headings, bold,
+// code, and bullet/numbered lists. Content is escaped before transformation.
+function renderMd(src) {
+  const inline = s => esc(s)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  const out = [];
+  let inList = false;
+  const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+  for (const raw of String(src).split('\n')) {
+    const trimmed = raw.trim();
+    if (/^#{1,6}\s/.test(trimmed)) {
+      closeList();
+      out.push(`<h2>${inline(trimmed.replace(/^#{1,6}\s*/, ''))}</h2>`);
+    } else if (/^[-*]\s+/.test(trimmed)) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${inline(trimmed.replace(/^[-*]\s+/, ''))}</li>`);
+    } else if (/^\d+[、.．]\s*/.test(trimmed)) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${inline(trimmed.replace(/^\d+[、.．]\s*/, ''))}</li>`);
+    } else if (!trimmed) {
+      closeList();
+    } else {
+      closeList();
+      out.push(`<p>${inline(trimmed)}</p>`);
+    }
+  }
+  closeList();
+  return out.join('');
+}
+
+const doc = String(report.doc || '').trim();
+if (doc) {
+  const docCard = document.getElementById('docCard');
+  docCard.hidden = false;
+  document.getElementById('docView').innerHTML = renderMd(doc);
+}
 
 const flagged = abnormalCount(report.items);
-document.getElementById('summary').innerHTML = `
-  <div><strong>${report.items.length}</strong>项指标</div>
-  <div class="${flagged ? 'flag' : ''}" style="${flagged ? 'color:var(--accent)' : ''}">
-    <strong>${flagged}</strong>项异常</div>
-  <div><strong>${esc(report.collectedAt)}</strong>采样日期</div>`;
-
-document.getElementById('rows').innerHTML = report.items.map(item => {
-  const dir = direction(item);
-  const tag = dir === 'normal' ? '' : `<span class="tag">${dir === 'high' ? 'H' : 'L'}</span>`;
-  return `<tr class="${isAbnormal(item) ? 'abnormal' : ''}" data-item="${esc(item.id)}" style="cursor:pointer">
-    <td><span class="name">${esc(item.name)}</span><span class="full">${esc(item.display)}</span></td>
-    <td class="num">${esc(item.value)}${tag}</td>
-    <td>${esc(item.unit)}</td>
-    <td class="num">${esc(referenceText(item))}</td>
-  </tr>`;
-}).join('');
-
-if (report.photo) {
-  const card = document.getElementById('photoCard');
-  card.hidden = false;
-  document.getElementById('photoLink').href = report.photo;
+if (report.items.length) {
+  document.getElementById('summary').innerHTML = `
+    <div><strong>${report.items.length}</strong>${t('项指标')}</div>
+    <div class="${flagged ? 'flag' : ''}" style="${flagged ? 'color:var(--accent)' : ''}">
+      <strong>${flagged}</strong>${t('项异常')}</div>
+    <div><strong>${esc(report.collectedAt)}</strong>${t('检查日期')}</div>`;
+  document.getElementById('rows').innerHTML = report.items.map(item => {
+    const dir = direction(item);
+    const tag = dir === 'normal' ? '' : `<span class="tag">${dir === 'high' ? 'H' : 'L'}</span>`;
+    return `<tr class="${isAbnormal(item) ? 'abnormal' : ''}" data-item="${esc(item.id)}" style="cursor:pointer">
+      <td><span class="name">${esc(item.name)}</span><span class="full">${esc(item.display)}</span></td>
+      <td class="num">${esc(item.value)}${tag}</td>
+      <td>${esc(item.unit)}</td>
+      <td class="num">${esc(referenceText(item))}</td>
+    </tr>`;
+  }).join('');
+} else {
+  document.getElementById('summary').innerHTML = `
+    <div><strong>${esc((report.meta || {}).department || report.type)}</strong></div>
+    <div><strong>${esc(report.collectedAt)}</strong>${t('检查日期')}</div>`;
+  document.getElementById('itemsSection').hidden = true;
 }
 
 // US-10: plain-language explanation with the change since the last report.
@@ -97,17 +167,24 @@ document.getElementById('rows').addEventListener('click', async event => {
   if (!tr) return;
   if (currentRow === tr.dataset.item) { explainBox.innerHTML = ''; currentRow = null; return; }
   currentRow = tr.dataset.item;
-  explainBox.innerHTML = `<div class="explain-panel">正在生成解读…</div>`;
+  explainBox.innerHTML = `<div class="explain-panel">${t('正在生成解读…')}</div>`;
+  // 表格很长时，解读面板可能落在视口外：就近滚一下让用户看到结果。
+  explainBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   try {
     const result = await api('/api/explain', {
       method: 'POST',
       body: JSON.stringify({ reportId: report.id, itemId: tr.dataset.item })
     });
     if (currentRow !== tr.dataset.item) return;
+    const item = report.items.find(i => i.id === tr.dataset.item);
+    const trendLink = item ? `
+      <a class="mini-link" style="display:inline-block;margin-top:8px"
+         href="/trend.html?patientId=${encodeURIComponent(report.patientId)}&name=${encodeURIComponent(item.name)}">
+        ${t('查看「{name}」的历史趋势 →', { name: esc(item.name) })}</a>` : '';
     explainBox.innerHTML = `
       <div class="explain-panel">
         ${esc(result.text)}
-        <span class="disclaimer">${esc(DISCLAIMER)}</span>
+        ${trendLink}
       </div>`;
   } catch (err) {
     explainBox.innerHTML = '';
@@ -116,12 +193,35 @@ document.getElementById('rows').addEventListener('click', async event => {
   }
 });
 
+// 报告级整体分析：检验项报告与叙述性报告统一做通俗解读。
+document.getElementById('analyzeBtn').addEventListener('click', async () => {
+  const box = document.getElementById('analyzeBox');
+  box.innerHTML = `<div class="explain-panel">${t('正在生成整份报告的分析…')}</div>`;
+  try {
+    const result = await api('/api/explain/report', {
+      method: 'POST',
+      body: JSON.stringify({ reportId: report.id })
+    });
+    if (!result.ok) {
+      box.innerHTML = `<div class="explain-panel">${esc(result.error || t('分析失败'))}</div>`;
+      return;
+    }
+    box.innerHTML = `
+      <div class="explain-panel doc-view">
+        ${renderMd(result.text)}
+      </div>`;
+  } catch (err) {
+    box.innerHTML = '';
+    toast(err.message);
+  }
+});
+
 // US-11: delete a wrong upload so the timeline stays clean.
 document.getElementById('deleteBtn').addEventListener('click', async () => {
-  if (!confirm('确定删除这份报告吗？删除后无法恢复。')) return;
+  if (!confirm(t('确定删除这份报告吗？删除后无法恢复。'))) return;
   try {
     await api(`/api/reports/${encodeURIComponent(report.id)}`, { method: 'DELETE' });
-    location.href = '/';
+    location.href = fromHome ? '/' : '/timeline.html';
   } catch (err) {
     toast(err.message);
   }

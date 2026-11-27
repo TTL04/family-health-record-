@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN" data-title="绑定档案">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>绑定档案 · 家庭健康档案</title>
+<link rel="stylesheet" href="/client/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="topline">
+      <a class="back-btn" href="/" data-i18n="← 返回首页">← 返回首页</a>
+    </div>
+    <h1 data-i18n="绑定已有档案">绑定已有档案</h1>
+    <div class="meta" data-i18n="输入家人给你的 6 位绑定码，或直接认领尚无归属的档案">输入家人给你的 6 位绑定码，或直接认领尚无归属的档案</div>
+  </header>
+
+  <section class="card">
+    <label class="label" for="bindCode" data-i18n="绑定码">绑定码</label>
+    <div class="bind-row">
+      <input id="bindCode" class="bind-input" maxlength="6" autocomplete="off"
+             data-i18n-ph="如：8Y4GEH" placeholder="如：8Y4GEH" style="text-transform:uppercase">
+      <button class="btn btn-primary" id="bindBtn" type="button" data-i18n="绑定">绑定</button>
+    </div>
+    <div class="note" style="margin-top:10px" data-i18n="绑定后仅可查看报告，不能新增或删除。">绑定后仅可查看报告，不能新增或删除。</div>
+    <div class="form-err" id="bindErr" hidden></div>
+  </section>
+
+  <section class="card">
+    <label class="label"><span data-i18n="待认领的档案">待认领的档案</span></label>
+    <div id="unclaimed"></div>
+  </section>
+</div>
+
+<script type="module">
+import { api, esc, toast, setActivePatient } from './api.mjs';
+import { initI18n, t } from './i18n.mjs';
+
+initI18n();
+
+const $ = id => document.getElementById(id);
+
+const state = await api('/api/state');
+
+function renderUnclaimed(list) {
+  const box = $('unclaimed');
+  if (!list.length) {
+    box.innerHTML = `<div class="note">${t('没有待认领的档案 —— 所有档案都已有归属。')}</div>`;
+    return;
+  }
+  box.innerHTML = list.map(p => `
+    <div class="row claim-row">
+      <div class="row-main">
+        <strong>${esc(p.name)}</strong>
+        <span>${p.reportCount ? t('{n} 份报告', { n: p.reportCount }) : t('暂无报告')}</span>
+      </div>
+      <button type="button" class="btn-small" data-claim="${esc(p.id)}">${t('认领')}</button>
+    </div>`).join('');
+}
+renderUnclaimed(state.unclaimed);
+
+$('unclaimed').addEventListener('click', async event => {
+  const btn = event.target.closest('[data-claim]');
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    const saved = await api(`/api/patients/${encodeURIComponent(btn.dataset.claim)}/claim`, {
+      method: 'POST', body: '{}'
+    });
+    setActivePatient(saved.id);
+    location.href = '/';
+  } catch (err) {
+    toast(err.message);
+    btn.disabled = false;
+  }
+});
+
+$('bindBtn').addEventListener('click', async () => {
+  const errBox = $('bindErr');
+  errBox.hidden = true;
+  const code = $('bindCode').value.trim().toUpperCase();
+  if (code.length !== 6) {
+    errBox.textContent = t('绑定码是 6 位字母数字，请核对后再试');
+    errBox.hidden = false;
+    return;
+  }
+  $('bindBtn').disabled = true;
+  try {
+    const saved = await api('/api/bind', { method: 'POST', body: JSON.stringify({ code }) });
+    setActivePatient(saved.id);
+    toast(t('已绑定「{name}」', { name: saved.name }));
+    setTimeout(() => { location.href = '/'; }, 400);
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.hidden = false;
+    $('bindBtn').disabled = false;
+  }
+});
+
+$('bindCode').addEventListener('keydown', event => {
+  if (event.key === 'Enter') $('bindBtn').click();
+});
+</script>
+</body>
+</html>

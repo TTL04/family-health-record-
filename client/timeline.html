@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>报告时间线 · 家庭健康档案</title>
+<link rel="stylesheet" href="/client/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="topline">
+      <a class="back-btn" href="/" data-i18n="← 返回首页">← 返回首页</a>
+    </div>
+    <h1 id="patientName" data-i18n="报告时间线">报告时间线</h1>
+    <div class="meta" id="patientMeta"></div>
+  </header>
+
+  <section class="card" id="filterCard" hidden>
+    <div class="filter-bar">
+      <input id="searchInput" type="text" data-i18n-ph="搜索报告类型 / 医院" placeholder="搜索报告类型 / 医院">
+      <select id="hospitalFilter"><option value="" data-i18n="全部医院">全部医院</option></select>
+      <select id="tagFilter"><option value="" data-i18n="全部标签">全部标签</option></select>
+      <select id="abnormalFilter">
+        <option value="" data-i18n="全部报告">全部报告</option>
+        <option value="abnormal" data-i18n="仅看异常">仅看异常</option>
+      </select>
+    </div>
+  </section>
+
+  <section class="card" id="analyzeCard" hidden>
+    <div class="topline" style="margin-bottom:6px">
+      <label class="label" style="margin:0"><span data-i18n="AI 整体分析">AI 整体分析</span> <small data-i18n="汇总这位家人的全部报告">汇总这位家人的全部报告</small></label>
+      <button type="button" class="btn-small" id="analyzeBtn" data-i18n="开始分析">开始分析</button>
+    </div>
+    <div id="analyzeBox"></div>
+  </section>
+
+  <div class="list-head" id="listHead" hidden>
+    <span class="list-count" id="listCount"></span>
+    <button type="button" class="btn-small" id="listToggle" aria-expanded="true" aria-controls="list" data-i18n="收起">收起</button>
+  </div>
+
+  <section id="list"></section>
+
+  <section aria-label="更多功能">
+    <div class="section-label" data-i18n="更多功能">更多功能</div>
+    <div class="entry-grid">
+      <a class="entry" href="/trend.html">
+        <span class="entry-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 19V5m0 14h16M8 15l3-4 3 2 5-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <strong data-i18n="指标趋势">指标趋势</strong>
+        <span class="entry-sub" data-i18n="一个指标跨日期的变化">一个指标跨日期的变化</span>
+      </a>
+      <a class="entry" href="/profile.html">
+        <span class="entry-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </span>
+        <strong data-i18n="患者资料">患者资料</strong>
+        <span class="entry-sub" data-i18n="资料与分享">资料与分享</span>
+      </a>
+    </div>
+    <div class="btn-row" id="patientActions" hidden>
+      <button type="button" class="btn btn-ghost" id="unbindBtn" hidden data-i18n="解绑">解绑</button>
+      <button type="button" class="btn btn-danger" id="deleteBtn" hidden data-i18n="删除">删除</button>
+    </div>
+  </section>
+
+</div>
+
+<a class="fab fab-text" id="addReportBtn" href="/new.html" title="增加报告" aria-label="增加报告" hidden data-i18n="＋ 增加报告">＋ 增加报告</a>
+
+<script type="module">
+import { api, esc, toast, activePatient, setActivePatient, clearActivePatient } from './api.mjs';
+import { initI18n, t } from './i18n.mjs';
+
+initI18n();
+
+const list = document.getElementById('list');
+
+function render(state) {
+  const patient = activePatient(state.patients);
+  if (patient) setActivePatient(patient.id);
+
+  if (patient) {
+    document.getElementById('patientName').textContent = t('{name} 的报告', { name: patient.name });
+    const bits = [patient.birthDate && t('{date} 生', { date: patient.birthDate }), patient.gender && t(patient.gender)]
+      .filter(Boolean).join(' · ');
+    document.getElementById('patientMeta').textContent = bits || t('补充患者资料请返回首页进入');
+  } else {
+    document.getElementById('patientName').textContent = t('先创建患者资料');
+    document.getElementById('patientMeta').textContent = t('添加姓名后即可开始记录报告');
+  }
+
+  // 档案关系：自己建的显示「删除」，别人分享的显示「解绑」。
+  const isOwner = Boolean(patient && patient.ownerUserId === state.user?.id);
+  document.getElementById('patientActions').hidden = !patient;
+  document.getElementById('deleteBtn').hidden = !isOwner;
+  document.getElementById('unbindBtn').hidden = !patient || isOwner;
+
+  const allRows = state.reports.filter(r => !patient || r.patientId === patient.id);
+  // 只有档案创建者（或管理员开通了上传权限的成员）能新增报告。
+  document.getElementById('addReportBtn').hidden = !(patient && patient.canUpload);
+  document.getElementById('analyzeCard').hidden = !(patient && allRows.length);
+  document.getElementById('filterCard').hidden = !(patient && allRows.length);
+  document.getElementById('listHead').hidden = !(patient && allRows.length);
+
+  // 医院筛选下拉（去重；保留当前已选项）
+  const hospital = document.getElementById('hospitalFilter').value;
+  const hospitals = [...new Set(allRows.map(r => r.hospital).filter(Boolean))].sort();
+  document.getElementById('hospitalFilter').innerHTML =
+    `<option value="">${t('全部医院')}</option>` +
+    hospitals.map(h => `<option value="${esc(h)}"${h === hospital ? ' selected' : ''}>${esc(h)}</option>`).join('');
+
+  // 标签筛选下拉（去重；保留当前已选项）
+  const tag = document.getElementById('tagFilter').value;
+  const tags = [...new Set(allRows.map(r => r.tag).filter(Boolean))].sort();
+  document.getElementById('tagFilter').innerHTML =
+    `<option value="">${t('全部标签')}</option>` +
+    tags.map(x => `<option value="${esc(x)}"${x === tag ? ' selected' : ''}>${esc(t(x))}</option>`).join('');
+
+  // 应用筛选
+  const searchTerm = document.getElementById('searchInput').value.trim().toLowerCase();
+  const abnormalOnly = document.getElementById('abnormalFilter').value === 'abnormal';
+  const rows = allRows.filter(r => {
+    if (searchTerm && !`${r.type} ${r.hospital || ''}`.toLowerCase().includes(searchTerm)) return false;
+    if (hospital && r.hospital !== hospital) return false;
+    if (tag && r.tag !== tag) return false;
+    if (abnormalOnly && !(r.abnormalCount > 0)) return false;
+    return true;
+  });
+
+  document.getElementById('listCount').textContent = rows.length === allRows.length
+    ? t('共 {n} 份报告', { n: allRows.length })
+    : t('筛选出 {n} / {total} 份', { n: rows.length, total: allRows.length });
+
+  if (!allRows.length) {
+    list.innerHTML = `
+      <div class="card empty">
+        <strong>${patient ? t('{name}还没有报告', { name: esc(patient.name) }) : t('还没有报告')}</strong>
+        ${t('拍一张检验报告的照片，或者手动录入，第一份报告会出现在这里。')}
+      </div>`;
+  } else if (!rows.length) {
+    list.innerHTML = `<div class="card empty"><strong>${t('没有符合条件的报告')}</strong>${t('换个关键词或筛选条件试试。')}</div>`;
+  } else {
+    list.innerHTML = rows.map(r => `
+      <a class="card row" href="/report.html?id=${esc(r.id)}">
+        <div class="row-date">${esc(r.collectedAt)}</div>
+        <div class="row-main">
+          <strong>${esc(r.type)}${r.tag ? ` <span class="badge plain">${esc(t(r.tag))}</span>` : ''}</strong>
+          <span>${esc(r.hospital || t('未记录医院'))}${r.itemCount ? ` · ${t('{n} 项指标', { n: r.itemCount })}` : ` · ${t('文字报告')}`}</span>
+        </div>
+        ${r.abnormalCount > 0
+          ? `<span class="badge warn">${t('{n} 项异常', { n: r.abnormalCount })}</span>`
+          : r.itemCount
+            ? `<span class="badge ok">${t('正常')}</span>`
+            : `<span class="badge plain">${t('记录')}</span>`}
+      </a>`).join('');
+  }
+}
+
+// 简化 Markdown 渲染（标题、加粗、列表）。
+function renderMd(src) {
+  const inline = s => esc(s)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  const out = [];
+  let inList = false;
+  const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+  for (const raw of String(src).split('\n')) {
+    const t = raw.trim();
+    if (/^#{1,6}\s/.test(t)) {
+      closeList();
+      out.push(`<h2>${inline(t.replace(/^#{1,6}\s*/, ''))}</h2>`);
+    } else if (/^[-*]\s+/.test(t)) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${inline(t.replace(/^[-*]\s+/, ''))}</li>`);
+    } else if (!t) {
+      closeList();
+    } else {
+      closeList();
+      out.push(`<p>${inline(t)}</p>`);
+    }
+  }
+  closeList();
+  return out.join('');
+}
+
+try {
+  const state = await api('/api/state');
+  render(state);
+
+  // 报告列表（时间线）默认展开，可收成一行；筛选时自动展开，避免看不到结果。
+  const listToggle = document.getElementById('listToggle');
+  const setListOpen = open => {
+    list.hidden = !open;
+    listToggle.setAttribute('aria-expanded', String(open));
+    listToggle.dataset.i18n = open ? '收起' : '展开';
+    listToggle.textContent = t(listToggle.dataset.i18n);
+  };
+  setListOpen(true);
+  listToggle.addEventListener('click', () => setListOpen(list.hidden));
+
+  // 筛选：搜索 + 医院 + 标签 + 仅看异常
+  document.getElementById('searchInput').addEventListener('input', () => { setListOpen(true); render(state); });
+  document.getElementById('hospitalFilter').addEventListener('change', () => { setListOpen(true); render(state); });
+  document.getElementById('tagFilter').addEventListener('change', () => { setListOpen(true); render(state); });
+  document.getElementById('abnormalFilter').addEventListener('change', () => { setListOpen(true); render(state); });
+
+  // 删除档案：仅管理者，档案下的报告一并删除。
+  document.getElementById('deleteBtn').addEventListener('click', async () => {
+    const patient = activePatient(state.patients);
+    if (!patient) return;
+    if (!confirm(t('删除「{name}」？该档案下的全部报告会一起删除，无法恢复。', { name: patient.name }))) return;
+    try {
+      await api(`/api/patients/${encodeURIComponent(patient.id)}`, { method: 'DELETE' });
+      clearActivePatient();
+      location.href = '/';
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+
+  // 解绑：只是退出这份别人分享的档案，档案本身不受影响。
+  document.getElementById('unbindBtn').addEventListener('click', async () => {
+    const patient = activePatient(state.patients);
+    if (!patient) return;
+    if (!confirm(t('解除与「{name}」的绑定？解除后你将看不到这份档案。', { name: patient.name }))) return;
+    try {
+      await api(`/api/patients/${encodeURIComponent(patient.id)}/unbind`, { method: 'POST', body: '{}' });
+      clearActivePatient();
+      location.href = '/';
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+
+  // 患者级整体分析：汇总当前患者的全部报告。
+  document.getElementById('analyzeBtn').addEventListener('click', async () => {
+    const patient = activePatient(state.patients);
+    if (!patient) return;
+    const box = document.getElementById('analyzeBox');
+    box.innerHTML = `<div class="explain-panel">${t('正在汇总「{name}」的全部报告…', { name: esc(patient.name) })}</div>`;
+    try {
+      const result = await api('/api/analyze/patient', {
+        method: 'POST',
+        body: JSON.stringify({ patientId: patient.id })
+      });
+      if (!result.ok) {
+        box.innerHTML = `<div class="explain-panel">${esc(result.error || t('分析失败'))}</div>`;
+        return;
+      }
+      box.innerHTML = `
+        <div class="explain-panel doc-view">
+          ${renderMd(result.text)}
+        </div>`;
+    } catch (err) {
+      box.innerHTML = '';
+      toast(err.message);
+    }
+  });
+} catch (err) {
+  toast(err.message);
+}
+</script>
+</body>
+</html>

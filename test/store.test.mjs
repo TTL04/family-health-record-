@@ -61,3 +61,60 @@ test('save writes an atomic, readable JSON file', () => {
   assert.equal(parsed.patients[0].name, '李建国');
   assert.ok(!fs.existsSync(`${file}.tmp`), 'temp file must be renamed away');
 });
+
+test('exportSnapshot returns data without sessions', () => {
+  const { store } = tmpStore();
+  const p = store.upsertPatient({ name: '王秀兰' });
+  store.addReport({ id: 'r_1', patientId: p.id, collectedAt: '2026-01-01', items: [] });
+  store.createUser('test', 'test1234');
+  store.createSession(store.data.users[0].id);
+
+  const snapshot = store.exportSnapshot();
+  assert.equal(snapshot.version, 1);
+  assert.equal(snapshot.patients.length, 1);
+  assert.equal(snapshot.reports.length, 1);
+  assert.equal(snapshot.users.length, 1);
+  assert.ok(!('sessions' in snapshot), 'sessions must not be exported');
+});
+
+test('importSnapshot merges without overwriting existing records', () => {
+  const { store } = tmpStore();
+  store.upsertPatient({ id: 'p_1', name: '王秀兰' });
+  store.addReport({ id: 'r_1', patientId: 'p_1', collectedAt: '2026-01-01', items: [] });
+
+  const snapshot = {
+    patients: [
+      { id: 'p_1', name: '应被忽略的重复' },
+      { id: 'p_2', name: '李建国' }
+    ],
+    reports: [
+      { id: 'r_1', patientId: 'p_1', collectedAt: '2000-01-01', items: [] },
+      { id: 'r_2', patientId: 'p_2', collectedAt: '2026-02-01', items: [] }
+    ],
+    users: [],
+    settings: { llm: null }
+  };
+
+  const result = store.importSnapshot(snapshot, 'u_me');
+  assert.equal(result.patients, 1);
+  assert.equal(result.reports, 1);
+  // Existing records are kept as-is; only gaps are filled.
+  assert.equal(store.data.patients.find(p => p.id === 'p_1').name, '王秀兰');
+  assert.equal(store.data.reports.find(r => r.id === 'r_1').collectedAt, '2026-01-01');
+  assert.equal(store.data.patients.length, 2);
+  assert.equal(store.data.reports.length, 2);
+});
+
+test('importSnapshot grants the importer access to imported archives', () => {
+  const { store } = tmpStore();
+  store.importSnapshot({
+    patients: [{ id: 'p_9', name: '陈阿婆' }], reports: [], users: [], settings: {}
+  }, 'u_me');
+  const imported = store.data.patients.find(p => p.id === 'p_9');
+  assert.ok(Array.isArray(imported.members) && imported.members.includes('u_me'));
+});
+
+test('importSnapshot rejects a non-object', () => {
+  const { store } = tmpStore();
+  assert.throws(() => store.importSnapshot('garbage', 'u_me'), /备份文件格式不正确/);
+});

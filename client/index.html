@@ -8,62 +8,169 @@
 </head>
 <body>
 <div class="wrap">
-  <header>
+  <header class="home-hero">
     <div class="topline">
-      <span class="eyebrow">Family Health Record</span>
-      <a class="mini-link" href="/profile.html">患者资料</a>
+      <span class="userbar">
+        <span class="meta" id="whoami"></span>
+        <button type="button" class="btn-small btn-ghost" id="logoutBtn" data-i18n="退出登录">退出登录</button>
+      </span>
+      <div class="lang-bar" id="langSlot"></div>
     </div>
-    <h1 id="patientName">家庭健康档案</h1>
-    <div class="meta" id="patientMeta"></div>
+    <div class="hero-body">
+      <div class="hero-text">
+        <h1 id="greet" data-i18n="家庭健康档案">家庭健康档案</h1>
+        <div class="hero-foot">
+          <a class="hero-bind" id="claimLink" href="/bind.html" hidden data-i18n="认领 / 绑定家人 →">认领 / 绑定家人 →</a>
+        </div>
+      </div>
+      <svg class="hero-art" viewBox="0 0 140 100" aria-hidden="true">
+        <circle cx="38" cy="48" r="10" fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M23 75c2.2-9.4 7.4-13.6 15-13.6s12.8 4.2 15 13.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        <circle cx="102" cy="48" r="10" fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M87 75c2.2-9.4 7.4-13.6 15-13.6s12.8 4.2 15 13.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        <circle cx="70" cy="56" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M58 74c2.2-7.2 6.2-10.4 12-10.4s9.8 3.2 12 10.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        <path d="M48 68c4 2 8.4 3.2 12.4 2.4M92 68c-4 2-8.4 3.2-12.4 2.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+    </div>
   </header>
 
-  <section id="list"></section>
+  <section aria-label="家人档案">
+    <div class="archive-grid" id="archives"></div>
+  </section>
 
-  <p class="note">时间线按采样日期从新到旧排列 · 点击任意一条查看全部指标和解读</p>
-  <p class="note" id="disclaimer"></p>
+  <section aria-label="异常提醒" id="alertsSection" hidden>
+    <div class="section-label" data-i18n="异常提醒">异常提醒</div>
+    <div class="card alerts-card">
+    <div class="alerts-head">
+      <strong id="alertTitle"></strong>
+      <button type="button" class="btn-small" id="alertsToggle" data-i18n="展开">展开</button>
+    </div>
+    <div id="alertList" hidden></div>
+    </div>
+  </section>
+
+  <section aria-label="快捷入口">
+    <div class="section-label" data-i18n="设置与管理">设置与管理</div>
+    <div class="entry-grid">
+      <a class="entry" href="/settings.html">
+        <span class="entry-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3v2.4M12 18.6V21M3 12h2.4M18.6 12H21M5.6 5.6l1.7 1.7M16.7 16.7l1.7 1.7M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </span>
+        <strong data-i18n="应用设置">应用设置</strong>
+        <span class="entry-sub" data-i18n="AI 说明与数据备份">AI 说明与数据备份</span>
+      </a>
+      <a class="entry" href="/admin.html" id="adminEntry" hidden>
+        <span class="entry-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 4.5-3.5 7.5-8 9-4.5-1.5-8-4.5-8-9V7l8-4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        </span>
+        <strong data-i18n="管理后台">管理后台</strong>
+        <span class="entry-sub" data-i18n="绑定成员与上传权限">绑定成员与上传权限</span>
+      </a>
+    </div>
+  </section>
 </div>
 
-<a class="fab" href="/new.html" title="新建报告" aria-label="新建报告">＋</a>
-
 <script type="module">
-import { api, esc, toast } from './api.mjs';
+import { api, esc, toast, setActivePatient } from './api.mjs';
+import { initI18n, t } from './i18n.mjs';
+
+initI18n();
+
+const $ = id => document.getElementById(id);
 
 try {
   const state = await api('/api/state');
-  const patient = state.patients[0];
+  $('whoami').textContent = state.user?.username ? `@${state.user.username}` : '';
+  // 管理后台：自己创建过档案（是管理者）或超级管理员可见。
+  const canManage = state.user?.role === 'admin'
+    || state.patients.some(p => p.ownerUserId === state.user?.id);
+  if (canManage) $('adminEntry').hidden = false;
 
-  if (patient) {
-    document.getElementById('patientName').textContent = `${patient.name} 的健康档案`;
-    const bits = [patient.birthYear && `${patient.birthYear} 年生`, patient.gender]
-      .filter(Boolean).join(' · ');
-    document.getElementById('patientMeta').textContent = bits || '点击右上角补充患者资料';
-  } else {
-    document.getElementById('patientName').textContent = '先创建患者资料';
-    document.getElementById('patientMeta').textContent = '添加姓名后即可开始记录报告';
+  // 认领/绑定入口：hero 左侧。有待认领档案时提示数量，否则常规显示。
+  const unclaimed = state.unclaimed || [];
+  const claimLink = $('claimLink');
+  if (unclaimed.length) {
+    claimLink.textContent = t('认领 {n} 份待认领档案 →', { n: unclaimed.length });
+  }
+  claimLink.hidden = false;
+
+  // One card per visible archive; newest report shown as the summary line.
+  const latestOf = pid => state.reports
+    .filter(r => r.patientId === pid)
+    .sort((a, b) => String(b.collectedAt).localeCompare(String(a.collectedAt)))[0] || null;
+
+  const cards = state.patients.map(p => {
+    const latest = latestOf(p.id);
+    const count = state.reports.filter(r => r.patientId === p.id).length;
+    const line = latest
+      ? t('最近一次 {date} · {type}', { date: latest.collectedAt, type: latest.type })
+      : t('还没有报告');
+    const badge = latest && latest.abnormalCount > 0
+      ? `<span class="badge warn">${t('{n} 项异常', { n: latest.abnormalCount })}</span>`
+      : count ? `<span class="badge ok">${t('正常')}</span>` : '';
+    // 身份区分：自己创建的档案可管理，别人分享来的只能看（除非已授权上传）。
+    const isOwner = p.ownerUserId === state.user?.id;
+    const roleTag = isOwner
+      ? `<span class="role-tag owner">${t('管理者')}</span>`
+      : `<span class="role-tag member">${t('绑定查看')}</span>`;
+    return `
+      <a class="archive-card" href="/timeline.html" data-pid="${esc(p.id)}">
+        <div class="archive-top"><strong>${esc(p.name)}${roleTag}</strong>${badge}</div>
+        <div class="archive-meta">${t('{n} 份报告', { n: count })}</div>
+        <div class="archive-latest">${line}</div>
+      </a>`;
+  });
+
+  cards.push(`
+    <a class="archive-card archive-add" href="/profile.html?new=1">
+      <div class="archive-top"><strong>＋ ${t('新建档案')}</strong></div>
+      <div class="archive-meta">${t('为另一位家人建立')}</div>
+    </a>`);
+
+  $('archives').innerHTML = cards.join('');
+
+  // Abnormal-item overview: every out-of-range value, newest first.
+  try {
+    const alertsResp = await api('/api/alerts');
+    const alerts = alertsResp.alerts || [];
+    if (alerts.length) {
+      $('alertsSection').hidden = false;
+      $('alertTitle').textContent = t('最近有 {n} 项指标异常', { n: alerts.length });
+      $('alertList').innerHTML = alerts.map(a => `
+        <a class="alert-row" href="/report.html?id=${encodeURIComponent(a.reportId)}&from=home">
+          <div class="alert-main">
+            <strong>${esc(a.item.name)}</strong>
+            <span>${esc(a.patientName)} · ${esc(a.collectedAt)} · ${esc(a.reportType)}</span>
+          </div>
+          <div class="alert-val">
+            <span class="alert-num">${esc(a.item.value)}${esc(a.item.unit || '')}</span>
+            <span class="tag">${a.item.direction === 'high' ? 'H' : 'L'}</span>
+          </div>
+        </a>`).join('');
+      $('alertsToggle').addEventListener('click', () => {
+        const list = $('alertList');
+        const collapsed = list.hidden;
+        list.hidden = !collapsed;
+        $('alertsToggle').textContent = collapsed ? t('收起') : t('展开');
+      });
+    }
+  } catch { /* alerts are optional; never block the dashboard */ }
+
+  if (!state.patients.length) {
+    $('greet').textContent = t('先建立第一份家人档案');
   }
 
-  document.getElementById('disclaimer').textContent = state.disclaimer;
+  // Clicking a card makes it the active patient for profile/new/timeline.
+  $('archives').addEventListener('click', event => {
+    const card = event.target.closest('[data-pid]');
+    if (card) setActivePatient(card.dataset.pid);
+  });
 
-  const list = document.getElementById('list');
-  if (!state.reports.length) {
-    list.innerHTML = `
-      <div class="card empty">
-        <strong>还没有报告</strong>
-        拍一张检验报告的照片，或者手动录入，第一份报告会出现在这里。
-      </div>`;
-  } else {
-    list.innerHTML = state.reports.map(r => `
-      <a class="card row" href="/report.html?id=${esc(r.id)}">
-        <div class="row-date">${esc(r.collectedAt)}</div>
-        <div class="row-main">
-          <strong>${esc(r.type)}</strong>
-          <span>${esc(r.hospital || '未记录医院')} · ${r.itemCount} 项指标</span>
-        </div>
-        ${r.abnormalCount > 0
-          ? `<span class="badge warn">${r.abnormalCount} 项异常</span>`
-          : `<span class="badge ok">正常</span>`}
-      </a>`).join('');
-  }
+  $('logoutBtn').addEventListener('click', async () => {
+    try { await api('/api/auth/logout', { method: 'POST', body: '{}' }); } catch { /* ignore */ }
+    location.href = '/login.html';
+  });
 } catch (err) {
   toast(err.message);
 }

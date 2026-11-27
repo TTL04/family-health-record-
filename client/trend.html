@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN" data-title="指标趋势">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>指标趋势 · 家庭健康档案</title>
+<link rel="stylesheet" href="/client/style.css">
+<style>
+  svg { width: 100%; height: auto; display: block; }
+  .chart-card { padding: 12px; }
+  .legend { display: flex; gap: 18px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 18px; height: 0; border-top: 2px dashed var(--accent); vertical-align: 3px; margin-right: 6px; }
+  .legend b { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); vertical-align: -1px; margin-right: 6px; }
+  .legend b.ok { background: var(--ok); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="topline">
+      <a class="back-btn" id="backLink" href="/timeline.html" data-i18n="← 返回时间线">← 返回时间线</a>
+    </div>
+    <h1 id="title" data-i18n="指标趋势">指标趋势</h1>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section class="card" id="searchCard" hidden>
+    <input id="indicatorSearch" type="text" data-i18n-ph="搜索指标名称，如：白细胞、血糖" placeholder="搜索指标名称，如：白细胞、血糖">
+  </section>
+
+  <section class="card chart-card" id="chartCard">
+    <div id="chart"></div>
+    <div class="legend">
+      <span><i></i><span data-i18n="参考范围">参考范围</span></span>
+      <span><b class="ok"></b><span data-i18n="正常值">正常值</span></span>
+      <span><b></b><span data-i18n="异常值">异常值</span></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <table>
+      <thead><tr><th data-i18n="日期">日期</th><th data-i18n="数值">数值</th><th data-i18n="较上次">较上次</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </section>
+
+</div>
+
+<script type="module">
+import { api, esc, toast, activePatient } from './api.mjs';
+import { initI18n, t } from './i18n.mjs';
+import { referenceText, direction } from '/logic.mjs';
+
+initI18n();
+
+const params = new URLSearchParams(location.search);
+const wantedPatientId = params.get('patientId') || '';
+const wantedName = params.get('name') || '';
+
+const state = await api('/api/state').catch(err => { toast(err.message); throw err; });
+
+// Entered from the dashboard without a target indicator: list every
+// indicator the active patient has, so the page is a complete entry point.
+if (!wantedPatientId || !wantedName) {
+  const patient = activePatient(state.patients);
+  if (!patient) {
+    document.getElementById('meta').textContent = t('先创建患者资料，再来看指标趋势');
+    throw new Error('no patient');
+  }
+  document.getElementById('title').textContent = t('{name} 的指标', { name: patient.name });
+  document.getElementById('meta').textContent = t('搜索并选择一个指标，看它随时间的变化');
+
+  const counts = new Map();
+  for (const r of state.reports.filter(r => r.patientId === patient.id)) {
+    for (const n of (r.itemNames || [])) {
+      counts.set(n, (counts.get(n) || 0) + 1);
+    }
+  }
+  const allNames = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+
+  document.getElementById('rows').closest('.card').hidden = true; // picker mode: no delta table
+  document.getElementById('chartCard').hidden = false;
+  document.getElementById('searchCard').hidden = allNames.length === 0;
+
+  const renderPicker = () => {
+    const q = document.getElementById('indicatorSearch').value.trim().toLowerCase();
+    const names = allNames.filter(([n]) => n.toLowerCase().includes(q));
+    document.getElementById('chart').innerHTML = allNames.length === 0
+      ? `<div class="empty"><strong>${t('{name}还没有可画趋势的指标', { name: esc(patient.name) })}</strong>${t('录入至少两次同名检验项目后，这里会出现趋势线。')}</div>`
+      : names.length
+        ? names.map(([n, c]) => `
+            <a class="row indicator-row" href="/trend.html?patientId=${encodeURIComponent(patient.id)}&name=${encodeURIComponent(n)}">
+              <div class="row-main"><strong>${esc(n)}</strong><span>${t('{n} 次记录', { n: c })}</span></div>
+              <span class="badge plain">${t('查看趋势')}</span>
+            </a>`).join('')
+        : `<div class="empty"><strong>${t('没有匹配「{q}」的指标', { q: esc(q) })}</strong>${t('换个关键词试试。')}</div>`;
+  };
+  renderPicker();
+  document.getElementById('indicatorSearch').addEventListener('input', renderPicker);
+} else {
+  await renderTrend(wantedPatientId, wantedName);
+}
+
+async function renderTrend(patientId, name) {
+  const patient = state.patients.find(p => p.id === patientId);
+  if (patient) {
+    document.getElementById('backLink').href = '/timeline.html';
+    document.getElementById('meta').textContent = t('{name} · 按采样日期从早到晚', { name: patient.name });
+  }
+
+  const data = await api(`/api/trend?patientId=${encodeURIComponent(patientId)}&name=${encodeURIComponent(name)}`);
+  const points = data.points;
+
+  document.getElementById('title').textContent = name;
+  document.getElementById('meta').textContent =
+    `${patient ? patient.name + ' · ' : ''}${t('{n} 次记录', { n: points.length })}${data.unit ? ` · ${t('单位 {unit}', { unit: data.unit })}` : ''}`;
+
+  if (points.length === 0) {
+    document.getElementById('chart').innerHTML =
+      `<div class="empty"><strong>${t('没有找到该指标的其他记录')}</strong>${t('换一个指标试试。')}</div>`;
+  } else if (points.length === 1) {
+    document.getElementById('chart').innerHTML =
+      `<div class="empty"><strong>${t('目前只有一次记录（{date}）', { date: esc(points[0].collectedAt) })}</strong>${t('再记录一次就能画出趋势线。')}</div>`;
+  } else {
+    document.getElementById('chart').innerHTML = renderChart(points, data);
+  }
+
+  document.getElementById('rows').innerHTML = points.slice().reverse().map((p, idx, arr) => {
+    const prev = arr[idx + 1];
+    let delta = '—';
+    if (prev) {
+      const diff = Math.round((p.value - prev.value) * 100) / 100;
+      delta = `${diff > 0 ? '↑' : diff < 0 ? '↓' : '＝'} ${Math.abs(diff)}`;
+    }
+    return `<tr>
+      <td><a class="mini-link" href="/report.html?id=${esc(p.reportId)}">${esc(p.collectedAt)}</a></td>
+      <td class="num" style="${p.abnormal ? 'color:var(--accent);font-weight:600' : ''}">${esc(p.value)}</td>
+      <td class="num">${esc(delta)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// US-09: one indicator across dates, one point per date, reference limits dashed.
+function renderChart(pts, d) {
+  const W = 640, H = 300, L = 52, R = 20, T = 18, B = 46;
+  const values = pts.map(p => p.value);
+  const lows = d.refLow != null ? [d.refLow] : [];
+  const highs = d.refHigh != null ? [d.refHigh] : [];
+  let min = Math.min(...values, ...lows);
+  let max = Math.max(...values, ...highs);
+  if (min === max) { min -= 1; max += 1; }
+  const pad = (max - min) * 0.12;
+  min -= pad; max += pad;
+
+  const x = i => L + (i / (pts.length - 1)) * (W - L - R);
+  const y = v => T + (1 - (v - min) / (max - min)) * (H - T - B);
+
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
+
+  // Y gridlines: 4 ticks
+  const ticks = 4;
+  let grid = '';
+  for (let t = 0; t <= ticks; t++) {
+    const v = min + (t / ticks) * (max - min);
+    const yy = y(v);
+    grid += `<line x1="${L}" y1="${yy}" x2="${W - R}" y2="${yy}" stroke="#e4e9f0" stroke-width="1"/>
+             <text x="${L - 8}" y="${yy + 4}" text-anchor="end" font-size="11" fill="#5b6b7e">${fmt(v)}</text>`;
+  }
+
+  let refBand = '';
+  if (d.refLow != null) {
+    refBand += `<line x1="${L}" y1="${y(d.refLow)}" x2="${W - R}" y2="${y(d.refLow)}" stroke="#e5484d" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.7"/>
+                <text x="${W - R}" y="${y(d.refLow) - 5}" text-anchor="end" font-size="10" fill="#e5484d">${t('下限 {v}', { v: fmt(d.refLow) })}</text>`;
+  }
+  if (d.refHigh != null) {
+    refBand += `<line x1="${L}" y1="${y(d.refHigh)}" x2="${W - R}" y2="${y(d.refHigh)}" stroke="#e5484d" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.7"/>
+                <text x="${W - R}" y="${y(d.refHigh) - 5}" text-anchor="end" font-size="10" fill="#e5484d">${t('上限 {v}', { v: fmt(d.refHigh) })}</text>`;
+  }
+
+  const dots = pts.map((p, i) => `
+    <circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="5"
+            fill="${p.abnormal ? '#e5484d' : '#2f9e6e'}">
+      <title>${esc(p.collectedAt)}：${esc(p.value)}${p.abnormal ? t('（异常）') : ''}</title>
+    </circle>`).join('');
+
+  // X labels: show all if short, else thin out
+  const every = pts.length <= 8 ? 1 : Math.ceil(pts.length / 8);
+  const labels = pts.map((p, i) => i % every === 0 || i === pts.length - 1 ? `
+    <text x="${x(i).toFixed(1)}" y="${H - 14}" text-anchor="middle" font-size="10" fill="#9aa6b5">${esc(p.collectedAt.slice(5))}</text>` : ''
+  ).join('');
+
+  const lineColor = '#12808f';
+
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${t('趋势图')}">
+    ${grid}
+    ${refBand}
+    <path d="${line}" fill="none" stroke="${lineColor}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}
+    ${labels}
+  </svg>`;
+}
+
+function fmt(v) {
+  return String(Math.round(v * 1000) / 1000);
+}
+</script>
+</body>
+</html>
